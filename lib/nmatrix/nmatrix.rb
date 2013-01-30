@@ -182,6 +182,13 @@ class NMatrix
 		end
 	end
 
+  def *(item)
+    if item.typeof?(Number)
+      self.map! do |i|
+        i*item
+      end
+    end
+  end
 	def inspect
 		original_inspect = super()
 		original_inspect = original_inspect[0...original_inspect.size-1]

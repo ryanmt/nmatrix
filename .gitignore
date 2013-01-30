@@ -17,7 +17,7 @@ spec/*.mtx
 *.so
 /tags
 *.gem
-
+*.swp
 ext/nmatrix/*.o
 ext/nmatrix/*.so
 ext/nmatrix/*.log

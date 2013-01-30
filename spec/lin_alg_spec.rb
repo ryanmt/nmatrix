@@ -1,4 +1,13 @@
 require 'spec_helper.rb'
+#  Types
+DENSE = NMatrix.random(4)
+YALE = NMatrix.new(:yale, [4,9], 2, :int32)
+0.upto(YALE.rows-1) do |row|
+  0.upto(YALE.cols-1) do |column|
+    YALE[row,column] = rand 100
+  end
+end
+LIST = NMatrix.new(:list, [2,2,3,4,5],  :int32)
 
 describe "Vector Norms" do 
   pending "p-norms"
@@ -12,15 +21,16 @@ describe "Matrix Norms" do
 end
 
 describe "Matrix-Scalar multiplication" do 
-  it "takes a scalar" do 
-    @rand = NMatrix.random(4)
-    @prod = @rand * 2.0
-    @prod[1,1].should == (@rand[1,1] * 2.0)
-  end
-  it "takes a matrix (C code)" do 
-    @mat1 = NMatrix.identity(3)
-    @mat2 = NMatrix.new([3,3], [1,2,3])
-    @mat_result = @mat1 * @mat2
-    @mat_result.pp
+  test_nms = {dense: DENSE, yale: YALE, list: LIST }
+  [:dense, :yale, :list].each do |dtype|
+    describe ":#{dtype.upcase}" do 
+      it "takes a scalar" do 
+        @test = test_nms[dtype]
+        @prod = @test * 2.0
+        @prod[1,1].should == (@test[1,1] * 2.0)
+      end
+      it "takes a matrix (C code)" do 
+      end
+    end
   end
 end

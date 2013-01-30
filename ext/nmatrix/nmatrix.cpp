@@ -142,7 +142,7 @@ static VALUE nm_hermitian(VALUE self);
 
 static VALUE nm_eqeq(VALUE left, VALUE right);
 
-static VALUE matrix_multiply_scalar(NMATRIX* left, VALUE scalar);
+//static VALUE matrix_multiply_scalar(NMATRIX* left, VALUE scalar);
 static VALUE matrix_multiply(NMATRIX* left, NMATRIX* right);
 static VALUE nm_multiply(VALUE left_v, VALUE right_v);
 static VALUE nm_factorize_lu(VALUE self);
@@ -965,7 +965,7 @@ static VALUE nm_multiply(VALUE left_v, VALUE right_v) {
   UnwrapNMatrix( left_v, left );
 
   if (NM_RUBYVAL_IS_NUMERIC(right_v))
-    return matrix_multiply_scalar(left, right_v);
+    rb_raise(rb_eNotImpError, "matrix-scalar multiplication not implemented yet"); //return matrix_multiply_scalar(left, right_v);
 
   else if (TYPE(right_v) == T_ARRAY)
     rb_raise(rb_eNotImpError, "for matrix-vector multiplication, please use an NVector instead of an Array for now");
@@ -1140,7 +1140,7 @@ static VALUE elementwise_op(nm::ewop_t op, VALUE left_val, VALUE right_val) {
       result->storage = ew_op[left->stype](op, reinterpret_cast<STORAGE*>(left->storage), NULL, right_val);
       result->stype   = left->stype;
     } else {
-      rb_raise(rb_eNotImpError, "Scalar element-wise operations not implemented for Yale storage yet");
+      //rb_raise(rb_eNotImpError, "Scalar element-wise operations not implemented for Yale storage yet");
     }
 
   } else {
@@ -1482,14 +1482,33 @@ STORAGE_PAIR binary_storage_cast_alloc(NMATRIX* left_matrix, NMATRIX* right_matr
 }
 
 
-static VALUE matrix_multiply_scalar(NMATRIX* left, VALUE scalar) {
-  rb_raise(rb_eNotImpError, "matrix-scalar multiplication not implemented yet");
+/*static VALUE matrix_multiply_scalar(NMATRIX* left, VALUE float) {
+  static STORAGE* (*storage_scalar_multiply[nm::NUM_STYPES])(const STORAGE_PAIR&, size_t*, float) = {
+  //rb_raise(rb_eNotImpError, "matrix-scalar multiplication not implemented yet");
+    nm_dense_storage_scalar_multiply
+    // implement them for the other data types... once you get this one working!
+  }
+
+  STORAGE* resulting_storage = storage_scalar_multiply[left->stype](casted, resulting_shape, f_number);
+  NMATRIX* result = nm_create(left->stype, resulting_storage);
+
+  static void (*free_storage[nm::NUM_STYPES])(STORAGE*) = {
+    nm_dense_storage_delete,
+    nm_list_storage_delete,
+    nm_yale_storage_delete
+  };
+
+  if(left->storage != casted.left) free_storage[result->stype](casted.left);
+
+  STYPE_MARK_TABLE(mark_table);
+
+  if (result) return Data_Wrap_Struct(cNMatrix, mark_table[result->stype], nm_delete, result);
   return Qnil;
 }
-
+*/
 static VALUE matrix_multiply(NMATRIX* left, NMATRIX* right) {
   ///TODO: multiplication for non-dense and/or non-decimal matrices
-
+  
   // Make sure both of our matrices are of the correct type.
   STORAGE_PAIR casted = binary_storage_cast_alloc(left, right);
 

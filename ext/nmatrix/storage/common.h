@@ -102,6 +102,31 @@ namespace nm {
     return 0;
   }
 
+  template <ewop_t op, typename LDType, typename RDType>
+    inline LDType ew_op_yale_switch(LDType left, RDType right) {
+      switch (op) {
+        case EW_ADD:
+          rb_raise(rb_eNotImpError, "Addition not supported for :yale (try casting to dense first)");
+          break;
+        case EW_SUB:
+          rb_raise(rb_eNotImpError, "Subtraction not supported for :yale (try casting to dense first)");
+          break;
+        case EW_MUL:
+          return left * right;
+        case EW_DIV: 
+          return left / right;
+        case EW_MOD:
+          rb_raise(rb_eNotImpError, "Element-wise modulo is currently not supported.");
+          break;
+
+        default:
+          rb_raise(rb_eStandardError, "This should not happen.");
+      }
+      return 0;
+    }
+
+ 
+
   #define EWOP_INT_INT_DIV(ltype, rtype)       template <>       \
   inline ltype ew_op_switch<EW_DIV>( ltype left, rtype right) { \
     if (right == 0) rb_raise(rb_eZeroDivError, "cannot divide type by 0, would throw SIGFPE");  \

@@ -150,7 +150,7 @@ dimension."
         dim.reduce(1, :*).times { |i| random_values << rng.rand }
       end
 
-      NMatrix.new(:dense, dim, random_values, :float64)
+      NMatrix.new(:dense, dim, random_values, :float64) ## Seems easy to make this work for all datatypes...
     end
 
     # seq()
