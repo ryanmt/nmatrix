@@ -121,8 +121,8 @@ static char           vector_insert(YALE_STORAGE* s, size_t pos, size_t* j, DTyp
 template <typename DType, typename IType>
 static char           vector_insert_resize(YALE_STORAGE* s, size_t current_size, size_t pos, size_t* j, size_t n, bool struct_only);
 
-template <typename nm::ewop_t op, typename IType, typename DType>
-YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype);
+template <ewop_t op, typename IType, typename DType>
+YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype, const void* scalar);
 
 /*
  * Functions
@@ -615,7 +615,7 @@ static bool ndrow_is_empty(const YALE_STORAGE* s, IType ija, const IType ija_nex
 #define YALE_IA(s) (reinterpret_cast<IType*>(s->ija))
 #define YALE_IJ(s) (reinterpret_cast<IType*>(s->ija) + s->shape[0] + 1)
 #define YALE_COUNT(yale) (yale->ndnz + yale->shape[0])
-
+/*
 template <typename nm::ewop_t op, typename IType, typename DType>
 YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype) {
 	size_t  init_capacity;
@@ -657,10 +657,10 @@ YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t
 	// Set the zero representation seperator.
 	da[da_index] = typeid(DType) == typeid(RubyObject) ? INT2FIX(0) : 0;
 	
-	/*
-	 * Calculate the offset between start of the A arrays and the non-diagonal
-	 * entries.
-	 */
+//
+//	 * Calculate the offset between start of the A arrays and the non-diagonal
+//	 * entries.
+//	 
 	a_index_offset = dest->shape[0] + 1;
 	
 	// Re-base the A arrays.
@@ -673,9 +673,8 @@ YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t
 	
 	// Calculate the non-diagonal values.
 	for (row_index = 0; row_index < dest->shape[0]; ++row_index) {
-		/*
-		 * Each row.
-		 */
+
+		 // Each row.
 		
 		printf("Row %d\n", row_index);
 		
@@ -686,27 +685,25 @@ YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t
 		printf("Left  : Row Start: %d - Row End %d\n", la_index + a_index_offset, la_row_max + a_index_offset);
 		printf("Right : Row Start: %d - Row End %d\n", ra_index + a_index_offset, ra_row_max + a_index_offset);
 		
-		/*
-		 * Set this row's left bound (which is also the previous row's right
-		 * bound).
-		 */
+		 // Set this row's left bound (which is also the previous row's right
+		 // bound).
+		 
 		YALE_IA(dest)[row_index] = da_index + a_index_offset;
 		
 		printf("Left bound of row %d in destination: %d\n", (int)row_index, (int)YALE_IA(dest)[row_index]);
 		
 		// Iterate over non-diagonal entries in this row.
 		while (la_index < la_row_max and ra_index < ra_row_max) {
-			/*
-			 * Elements are present on both the left- and right-hand side.
-			 */
+			
+			 // Elements are present on both the left- and right-hand side.
+			 
 			
 			printf("Marker 0\n");
 			
 			if (YALE_IJ(left)[la_index] == YALE_IJ(right)[ra_index]) {
-				/*
-				 * Current left- and right-hand values are in the same row and
-				 * column.
-				 */
+				
+				 // Current left- and right-hand values are in the same row and
+				 // column.
 				
 				printf("Calculating value for [%d, %d].\n", (int)row_index, (int)YALE_IJ(left)[la_index]);
 				
@@ -728,9 +725,8 @@ YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t
 				++ra_index;
 				
 			} else if (YALE_IJ(left)[la_index] < YALE_IJ(right)[ra_index]) {
-				/*
-				 * The right-hand index is ahead of the left-hand index.
-				 */
+				
+				 // The right-hand index is ahead of the left-hand index.
 				
 				if (op != EW_MUL) {
 					// If this is multiplion there is no point in doing the operation.
@@ -750,9 +746,7 @@ YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t
 				++la_index;
 				
 			} else {
-				/*
-				 * The left-hand index is ahead of the right-hand index.
-				 */
+				 // The left-hand index is ahead of the right-hand index.
 				
 				if (op != EW_MUL) {
 					// If this is multiplion there is no point in doing the operation.
@@ -774,19 +768,16 @@ YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t
 		}
 		
 		if (op != EW_MUL) {
-			/*
-			 * Process the remaining elements on the left- or right-hand side.  One or
-			 * the other, or neither, of the following loops may execute, but not
-			 * both.
-			 *
-			 * If we are doing multiplication this is unnecessary as all remaining
-			 * operations will produce a zero value.
-			 */
+			 // Process the remaining elements on the left- or right-hand side.  One or
+			 // the other, or neither, of the following loops may execute, but not
+			 // both.
+			 
+			 // If we are doing multiplication this is unnecessary as all remaining
+			 // operations will produce a zero value.
+			 //
 		
 			while (la_index < la_row_max) {
-				/*
-				 * Process the remaining elements on the left-hand side.
-				 */
+				 // Process the remaining elements on the left-hand side.
 				
 				printf("Marker 1\n");
 				
@@ -805,9 +796,7 @@ YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t
 			}
 		
 			while (ra_index < ra_row_max) {
-				/*
-				 * Process the remaining elements on the right-hand side.
-				 */
+				 // Process the remaining elements on the right-hand side.
 				
 				printf("Marker 2\n");
 				
@@ -852,6 +841,7 @@ YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t
 	
 	return dest;
 }
+*/
 
 /////////////
 // Utility //
@@ -1291,8 +1281,12 @@ STORAGE* nm_yale_storage_matrix_multiply(const STORAGE_PAIR& casted_storage, siz
 /*
  * Documentation goes here.
  */
+
+//template <typename nm::ewop_t op, typename IType, typename DType>
+//YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype) {
+
 STORAGE* nm_yale_storage_ew_op(nm::ewop_t op, const STORAGE* left, const STORAGE* right, VALUE scalar) {
-	OP_ITYPE_DTYPE_TEMPLATE_TABLE(nm::yale_storage::ew_op, const YALE_STORAGE*, const YALE_STORAGE*, const void*);
+	OP_ITYPE_DTYPE_TEMPLATE_TABLE(nm::ewop_t, const YALE_STORAGE*, const YALE_STORAGE*, const void*);
   if (right)
     return ttable[op][left->dtype][right->dtype](reinterpret_cast<const YALE_STORAGE*>(left), reinterpret_cast<const YALE_STORAGE*>(right), NULL);
   else {
@@ -1381,9 +1375,10 @@ STORAGE* nm_yale_storage_ew_op(nm::ewop_t op, const STORAGE* left, const STORAGE
 /////////////////////////
 // Templated Functions //
 /////////////////////////
+namespace nm { namespace yale_storage {
 
-template <ewop_t op, typename LDType, typename RDType>
-static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, const void* rscalar) {
+template <ewop_t op, typename IType, typename DType>
+static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype, const void* rscalar) {
   unsigned int count;
 
   size_t* new_shape = (size_t*)calloc(left->dim, sizeof(size_t));
@@ -1444,6 +1439,7 @@ static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, 
   return result;
 }
 
+}} //end of namespace nm::yale_storage
 ///////////////
 // Lifecycle //
 ///////////////
