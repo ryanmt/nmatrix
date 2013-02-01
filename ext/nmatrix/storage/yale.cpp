@@ -1298,84 +1298,10 @@ STORAGE* nm_yale_storage_ew_op(nm::ewop_t op, const STORAGE* left, const STORAGE
   }
 }
 
-
-
-  // This old version appears to be a conglomeration of a templated method with the normal... I guess that the ttables pull the templated functions?  I bet that is so... something is starting to make sense!
-/*	
-	YALE_STORAGE* new_l = NULL, * new_r = NULL;
-	YALE_STORAGE* result;
-	
-	const YALE_STORAGE* casted_l, * casted_r;
-	
-	dtype_t new_dtype;
-	
-	if (left->dtype != right->dtype) {
-		
-		new_dtype = Upcast[left->dtype][right->dtype];
-		
-		if (left->dtype != new_dtype) {
-			new_l = reinterpret_cast<YALE_STORAGE*>(nm_yale_storage_cast_copy(left, new_dtype));
-		}
-		
-		if (right->dtype != new_dtype) {
-			new_r = reinterpret_cast<YALE_STORAGE*>(nm_yale_storage_cast_copy(right, new_dtype));
-		}
-		
-		if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS) {
-			result = ttable[op][new_l->itype][new_dtype](left->dtype  == new_dtype ?
-																											reinterpret_cast<const YALE_STORAGE*>(left) :
-																											reinterpret_cast<const YALE_STORAGE*>(new_l),
-																										
-																										right->dtype == new_dtype ?
-																											reinterpret_cast<const YALE_STORAGE*>(right) :
-																											reinterpret_cast<const YALE_STORAGE*>(new_r),
-																										
-																										new_dtype);
-			
-		} else {
-          size_t* new_shape = (size_t*)calloc(left->dim, sizeof(size_t*));
-          memcpy(new_shape, left->shape, sizeof(size_t*) * left->dim);
-          YALE_STORAGE* left_yale = (YALE_STORAGE*)left;
-          
-          size_t size = nm_yale_storage_get_size(left_yale);
-          //Determine the return dtype... Comparisons use BYTE, otherwise it is set by the left matrix
-          new_dtype = static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS ? left->dtype : BYTE;
-
-          YALE_STORAGE* result = nm_yale_storage_create(new_dtype, new_shape, left->dim, size);
-          uint8_t* res_elems = reinterpret_cast<uint8_t*>(result->a);
-          for (size_t count = nm_storage_count_max_elements(result); count-- > 0;) {
-            reinterpret_cast<uint8_t>(result->a)[count] = nm::ew_op_yale_switch<op, new_dtype, new_dtype>(l_elems[count], r_elems[count]
-            //	rb_raise(rb_eNotImpError, "Elementwise comparison is not yet implemented for the Yale storage class.");
-		}
-		
-		if (new_l != NULL) {
-			nm_yale_storage_delete(new_l);
-		}
-		
-		if (new_r != NULL) {
-			nm_yale_storage_delete(new_r);
-		}
-		
-		return result;
-		
-	} else {
-		
-		casted_l = reinterpret_cast<const YALE_STORAGE*>( left);
-		casted_r = reinterpret_cast<const YALE_STORAGE*>(right);
-		
-		if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS) {
-			
-			return ttable[op][casted_l->itype][casted_l->dtype](casted_l, casted_r, casted_l->dtype);
-		
-		} else {
-			rb_raise(rb_eNotImpError, "Elementwise comparison is not yet implemented for the Yale storage class.");
-		}
-	}
-}*/
 /////////////////////////
 // Templated Functions //
 /////////////////////////
-namespace nm { namespace yale_storage {
+//namespace nm { namespace yale_storage {
 
 template <ewop_t op, typename IType, typename DType>
 static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype, const void* rscalar) {
@@ -1439,7 +1365,7 @@ static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, 
   return result;
 }
 
-}} //end of namespace nm::yale_storage
+//}} //end of namespace nm::yale_storage
 ///////////////
 // Lifecycle //
 ///////////////
