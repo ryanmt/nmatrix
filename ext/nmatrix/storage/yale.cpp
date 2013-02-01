@@ -615,6 +615,73 @@ static bool ndrow_is_empty(const YALE_STORAGE* s, IType ija, const IType ija_nex
 #define YALE_IA(s) (reinterpret_cast<IType*>(s->ija))
 #define YALE_IJ(s) (reinterpret_cast<IType*>(s->ija) + s->shape[0] + 1)
 #define YALE_COUNT(yale) (yale->ndnz + yale->shape[0])
+
+/////////////////////////
+// Templated Functions //
+/////////////////////////
+
+template <ewop_t op, typename IType, typename DType>
+static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype, const void* rscalar) {
+  unsigned int count;
+
+  size_t* new_shape = (size_t*)calloc(left->dim, sizeof(size_t));
+  memcpy(new_shape, left->shape, sizeof(size_t) * left->dim);
+
+  //Determine the return dtype... Comparisons use BYTE, otherwise it is set by the left matrix
+  dtype_t new_dtype = static_cast<uint8_t>(op) < NUM_NONCOMP_EWOPS ? left->dtype : BYTE;
+  
+  YALE_STORAGE* result = nm_yale_storage_create(new_dtype, new_shape, left->dim, NULL, 0);
+
+  LDType* l_elems = reinterpret_cast<LDType*>(left->elements);
+
+  if(right) { // MATRIX-MATRIX operation
+    
+    RDType* r_elems = reinterpret_cast<RDType*>(right->elements);
+    
+    if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS ) { //use left-dtype
+      for (count = nm_storage_count_max_elements(result); count-- > 0;) {
+        reinterpret_cast<LDType*>(result->elements)[count] = ew_op_yale_switch<op, LDType, RDType>(l_elems[count], r_elems[count]);
+      }
+    } else { // new_dtype is BYTE: comparison operators
+      uint8_t* res_elems = reinterpret_cast<uint8_t*>(result->elements);
+
+      for (count = nm_storage_count_max_elements(result); count-- > 0;) {
+        switch (op) {
+          
+          default:
+            rb_raise(rb_eStandardError, "this should not happen unless you are comparing something");
+        }
+      }
+    } else { //matrix-scalar operation
+      const RDType* r_elem = reinterpret_cast<const RDType*>(rscalar);
+      
+      if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS) { //use left-dtype
+        
+        for (count = nm_storage_count_max_elements(result); count-- > 0;) {
+          reinterpret_cast<LDType*>(result->elements)[count] = ew_op_switch<op, LDType, RDType>(l_elems[count], *r_elem);
+        }
+      } else {
+        uint8_t* res_elems = reinterpret_cast<uint8_t*>(result->elements);
+
+        for (count = nm_storage_count_max_elements(result); count-- > 0;) {
+          switch (op) {
+            case EW_MUL:
+              res_elems[count] = l_elems[count] * *r_elem;
+              break;
+            case EW_DIV:
+              res_elems[count] = l_elems[count] / *r_elem;
+              break;
+            default:
+              rb_raise(rb_eNotImpError, "this should not occur unless I'm comparing something");
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
 /*
 template <typename nm::ewop_t op, typename IType, typename DType>
 YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype) {
@@ -1298,74 +1365,6 @@ STORAGE* nm_yale_storage_ew_op(nm::ewop_t op, const STORAGE* left, const STORAGE
   }
 }
 
-/////////////////////////
-// Templated Functions //
-/////////////////////////
-//namespace nm { namespace yale_storage {
-
-template <ewop_t op, typename IType, typename DType>
-static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype, const void* rscalar) {
-  unsigned int count;
-
-  size_t* new_shape = (size_t*)calloc(left->dim, sizeof(size_t));
-  memcpy(new_shape, left->shape, sizeof(size_t) * left->dim);
-
-  //Determine the return dtype... Comparisons use BYTE, otherwise it is set by the left matrix
-  dtype_t new_dtype = static_cast<uint8_t>(op) < NUM_NONCOMP_EWOPS ? left->dtype : BYTE;
-  
-  YALE_STORAGE* result = nm_yale_storage_create(new_dtype, new_shape, left->dim, NULL, 0);
-
-  LDType* l_elems = reinterpret_cast<LDType*>(left->elements);
-
-  if(right) { // MATRIX-MATRIX operation
-    
-    RDType* r_elems = reinterpret_cast<RDType*>(right->elements);
-    
-    if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS ) { //use left-dtype
-      for (count = nm_storage_count_max_elements(result); count-- > 0;) {
-        reinterpret_cast<LDType*>(result->elements)[count] = ew_op_yale_switch<op, LDType, RDType>(l_elems[count], r_elems[count]);
-      }
-    } else { // new_dtype is BYTE: comparison operators
-      uint8_t* res_elems = reinterpret_cast<uint8_t*>(result->elements);
-
-      for (count = nm_storage_count_max_elements(result); count-- > 0;) {
-        switch (op) {
-          
-          default:
-            rb_raise(rb_eStandardError, "this should not happen unless you are comparing something");
-        }
-      }
-    } else { //matrix-scalar operation
-      const RDType* r_elem = reinterpret_cast<const RDType*>(rscalar);
-      
-      if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS) { //use left-dtype
-        
-        for (count = nm_storage_count_max_elements(result); count-- > 0;) {
-          reinterpret_cast<LDType*>(result->elements)[count] = ew_op_switch<op, LDType, RDType>(l_elems[count], *r_elem);
-        }
-      } else {
-        uint8_t* res_elems = reinterpret_cast<uint8_t*>(result->elements);
-
-        for (count = nm_storage_count_max_elements(result); count-- > 0;) {
-          switch (op) {
-            case EW_MUL:
-              res_elems[count] = l_elems[count] * *r_elem;
-              break;
-            case EW_DIV:
-              res_elems[count] = l_elems[count] / *r_elem;
-              break;
-            default:
-              rb_raise(rb_eNotImpError, "this should not occur unless I'm comparing something");
-          }
-        }
-      }
-    }
-  }
-
-  return result;
-}
-
-//}} //end of namespace nm::yale_storage
 ///////////////
 // Lifecycle //
 ///////////////
