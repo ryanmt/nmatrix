@@ -630,57 +630,56 @@ static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, 
 
   //Determine the return dtype... Comparisons use BYTE, otherwise it is set by the left matrix
   dtype_t new_dtype = static_cast<uint8_t>(op) < NUM_NONCOMP_EWOPS ? left->dtype : BYTE;
-  
-// YALE_STORAGE* nm_yale_storage_create(dtype_t dtype, size_t* shape, size_t dim, size_t init_capacity) {
+
+  // YALE_STORAGE* nm_yale_storage_create(dtype_t dtype, size_t* shape, size_t dim, size_t init_capacity) {
   YALE_STORAGE* result = nm_yale_storage_create(new_dtype, new_shape, left->dim, l_size);
 
   DType* l_elems = reinterpret_cast<DType*>(left->a);
 
   if(right) { // MATRIX-MATRIX operation
-    
-    RDType* r_elems = reinterpret_cast<RDType*>(right->a);
-    
+
+    DType* r_elems = reinterpret_cast<DType*>(right->a);
+
     if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS ) { //use left-dtype
       for (count = nm_storage_count_max_elements(result); count-- > 0;) {
-        reinterpret_cast<LDType*>(result->a)[count] = ew_op_yale_switch<op, DType, DType>(l_elems[count], r_elems[count]);
+        reinterpret_cast<DType*>(result->a)[count] = ew_op_yale_switch<op, DType, DType>(l_elems[count], r_elems[count]);
       }
     } else { // new_dtype is BYTE: comparison operators
       uint8_t* res_elems = reinterpret_cast<uint8_t*>(result->a);
 
       for (count = nm_storage_count_max_elements(result); count-- > 0;) {
         switch (op) {
-          
+
           default:
             rb_raise(rb_eStandardError, "this should not happen unless you are comparing something");
         }
       }
-    } else { //matrix-scalar operation
-      const DType* r_elem = reinterpret_cast<const DType*>(rscalar);
-      
-      if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS) { //use left-dtype
-        
-        for (count = nm_storage_count_max_elements(result); count-- > 0;) {
-          reinterpret_cast<DType*>(result->a)[count] = ew_op_switch<op, DType, DType>(l_elems[count], *r_elem);
-        }
-      } else {
-        uint8_t* res_elems = reinterpret_cast<uint8_t*>(result->a);
+    }
+  } else { //matrix-scalar operation
+    const DType* r_elem = reinterpret_cast<const DType*>(rscalar);
 
-        for (count = nm_storage_count_max_elements(result); count-- > 0;) {
-          switch (op) {
-            case EW_MUL:
-              res_elems[count] = l_elems[count] * *r_elem;
-              break;
-            case EW_DIV:
-              res_elems[count] = l_elems[count] / *r_elem;
-              break;
-            default:
-              rb_raise(rb_eNotImpError, "this should not occur unless I'm comparing, adding, or subtracting something");
-          }
+    if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS) { //use left-dtype
+
+      for (count = nm_storage_count_max_elements(result); count-- > 0;) {
+        reinterpret_cast<DType*>(result->a)[count] = ew_op_switch<op, DType, DType>(l_elems[count], *r_elem);
+      }
+    } else {
+      uint8_t* res_elems = reinterpret_cast<uint8_t*>(result->a);
+
+      for (count = nm_storage_count_max_elements(result); count-- > 0;) {
+        switch (op) {
+          case EW_MUL:
+            res_elems[count] = l_elems[count] * *r_elem;
+            break;
+          case EW_DIV:
+            res_elems[count] = l_elems[count] / *r_elem;
+            break;
+          default:
+            rb_raise(rb_eNotImpError, "this should not occur unless I'm comparing, adding, or subtracting something");
         }
       }
     }
   }
-
   return result;
 }
 
@@ -1356,7 +1355,7 @@ STORAGE* nm_yale_storage_matrix_multiply(const STORAGE_PAIR& casted_storage, siz
 
 STORAGE* nm_yale_storage_ew_op(nm::ewop_t op, const STORAGE* left, const STORAGE* right, VALUE scalar) {
   // Need to first determine the ITYPE and DTYPES as this ttable isn't one which takes the sides separately...
-	OP_ITYPE_DTYPE_TEMPLATE_TABLE(nm::ewop_t, const YALE_STORAGE*, const YALE_STORAGE*, const void*);
+	OP_ITYPE_DTYPE_TEMPLATE_TABLE(nm::yale_storage::ew_op, YALE_STORAGE*, const YALE_STORAGE*, const YALE_STORAGE*, const void*);
   if (right)
     return ttable[op][left->dtype][right->dtype](reinterpret_cast<const YALE_STORAGE*>(left), reinterpret_cast<const YALE_STORAGE*>(right), NULL);
   else {
