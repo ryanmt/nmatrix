@@ -113,7 +113,7 @@ extern "C" {
   // Math //
   //////////
 	
-	STORAGE* nm_yale_storage_ew_op(nm::ewop_t op, const STORAGE* left, const STORAGE* right, VALUE scalar);
+	YALE_STORAGE* nm_yale_storage_ew_op(nm::yale_storage::ewop_t op, const YALE_STORAGE* left, const YALE_STORAGE* right, VALUE scalar);
   STORAGE* nm_yale_storage_matrix_multiply(const STORAGE_PAIR& casted_storage, size_t* resulting_shape, bool vector);
 
   /////////////

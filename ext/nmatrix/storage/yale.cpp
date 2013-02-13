@@ -122,7 +122,7 @@ template <typename DType, typename IType>
 static char           vector_insert_resize(YALE_STORAGE* s, size_t current_size, size_t pos, size_t* j, size_t n, bool struct_only);
 
 template <ewop_t op, typename IType, typename DType>
-YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype, const void* scalar);
+static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype, const void* scalar);
 
 /*
  * Functions
@@ -661,7 +661,7 @@ static YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, 
     if (static_cast<uint8_t>(op) < nm::NUM_NONCOMP_EWOPS) { //use left-dtype
 
       for (count = nm_storage_count_max_elements(result); count-- > 0;) {
-        reinterpret_cast<DType*>(result->a)[count] = ew_op_switch<op, DType, DType>(l_elems[count], *r_elem);
+        reinterpret_cast<DType*>(result->a)[count] = ew_op_yale_switch<op, DType, DType>(l_elems[count], *r_elem);
       }
     } else {
       uint8_t* res_elems = reinterpret_cast<uint8_t*>(result->a);
@@ -1353,12 +1353,21 @@ STORAGE* nm_yale_storage_matrix_multiply(const STORAGE_PAIR& casted_storage, siz
 //template <typename nm::ewop_t op, typename IType, typename DType>
 //YALE_STORAGE* ew_op(const YALE_STORAGE* left, const YALE_STORAGE* right, dtype_t dtype) {
 
-STORAGE* nm_yale_storage_ew_op(nm::ewop_t op, const STORAGE* left, const STORAGE* right, VALUE scalar) {
+YALE_STORAGE* nm_yale_storage_ew_op(nm::yale_storage::ewop_t op, const YALE_STORAGE* left, const YALE_STORAGE* right, VALUE scalar) {
+//YALE_STORAGE* nm_yale_storage_ew_op(nm::yale_storage::ewop_t op, const YALE_STORAGE* left, const YALE_STORAGE* right, VALUE scalar) {
+  dtype_t dtype = left->dtype;
+  itype_t itype = left->itype;
+  itype_t l_itype = nm_yale_storage_itype((const YALE_STORAGE*)left);
+  if(right)
+    itype_t r_itype = nm_yale_storage_itype((const YALE_STORAGE*)right);
+
   // Need to first determine the ITYPE and DTYPES as this ttable isn't one which takes the sides separately...
-	OP_ITYPE_DTYPE_TEMPLATE_TABLE(nm::yale_storage::ew_op, YALE_STORAGE*, const YALE_STORAGE*, const YALE_STORAGE*, const void*);
-  if (right)
-    return ttable[op][left->dtype][right->dtype](reinterpret_cast<const YALE_STORAGE*>(left), reinterpret_cast<const YALE_STORAGE*>(right), NULL);
-  else {
+	OP_ITYPE_DTYPE_TEMPLATE_TABLE(nm::yale_storage::ew_op, YALE_STORAGE*, itype_t, dtype_t, const YALE_STORAGE*, const YALE_STORAGE*, const void*);
+	//OP_ITYPE_DTYPE_TEMPLATE_TABLE(nm::yale_storage::ew_op, YALE_STORAGE*, itype_t, dtype_t, const YALE_STORAGE*, const YALE_STORAGE*, const void*);
+  if (right) {
+    // TODO reinterpret_cast the Right to be the left dtype
+    return ttable[op][left->itype][left->dtype](reinterpret_cast<const YALE_STORAGE*>(left), reinterpret_cast<const YALE_STORAGE*>(right), NULL);
+  } else {
     dtype_t r_dtype = nm_dtype_guess(scalar);
     void* r_scalar = ALLOCA_N(char, DTYPE_SIZES[r_dtype]);
     rubyval_to_cval(scalar, r_dtype, r_scalar);

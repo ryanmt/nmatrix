@@ -67,7 +67,20 @@ namespace nm {
     EW_LEQ,
     EW_GEQ
   };
-  
+  const int NUM_YALE_EWOPS = 9;
+  namespace yale_storage {
+    enum ewop_t {
+      EW_MUL,
+      EW_DIV,
+      EW_MOD,
+      EW_EQEQ,
+      EW_NEQ,
+      EW_LT,
+      EW_GT,
+      EW_LEQ,
+      EW_GEQ
+    };
+  } // end of namespace yale_storage
 } // end of namespace nm
 
 /*
