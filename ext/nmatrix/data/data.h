@@ -46,6 +46,8 @@
 #include "ruby_object.h"
 
 namespace nm {
+
+
   /*
    * Constants
    */
@@ -88,7 +90,7 @@ namespace nm {
   };
 
 #define CAST_TABLE(name)                                                   \
-  static STORAGE* (*(name)[nm::NUM_STYPES][nm::NUM_STYPES])(const STORAGE*, nm::dtype_t) = {      \
+  static STORAGE* (*(name)[nm::NUM_STYPES][nm::NUM_STYPES])(const STORAGE*, nm::dtype_t, void*) = {      \
     { nm_dense_storage_cast_copy,  nm_dense_storage_from_list,  nm_dense_storage_from_yale },  \
     { nm_list_storage_from_dense,  nm_list_storage_cast_copy,   nm_list_storage_from_yale  },  \
     { nm_yale_storage_from_dense,  nm_yale_storage_from_list,   nm_yale_storage_cast_copy  }   \
@@ -775,6 +777,8 @@ void*	    			rubyobj_to_cval(VALUE val, nm::dtype_t dtype);
 void  		  		rubyval_to_cval(VALUE val, nm::dtype_t dtype, void* loc);
 nm::RubyObject	rubyobj_from_cval(void* val, nm::dtype_t dtype);
 nm::RubyObject  rubyobj_from_cval_by_itype(void* val, nm::itype_t itype);
+
+void nm_init_data();
 
 } // end of extern "C" block
 

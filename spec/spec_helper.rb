@@ -24,7 +24,7 @@
 #
 # Common data for testing. 
 require "./lib/nmatrix"
-TOLERANCE = 0.001
+require "./lib/nmatrix/rspec"
 
 MATRIX43A_ARRAY = [14.0, 9.0, 3.0, 2.0, 11.0, 15.0, 0.0, 12.0, 17.0, 5.0, 2.0, 3.0]
 MATRIX32A_ARRAY = [12.0, 25.0, 9.0, 10.0, 8.0, 5.0]
@@ -67,3 +67,21 @@ def create_vector(stype) #:nodoc:
 
   m
 end
+
+# Stupid but independent comparison for slice_spec
+def nm_eql(n, m) #:nodoc:
+  if n.shape != m.shape
+    false
+  else # NMatrix
+    n.shape[0].times do |i|
+      n.shape[1].times do |j|
+        if n[i,j] != m[i,j]
+          puts "n[#{i},#{j}] != m[#{i},#{j}] (#{n[i,j]} != #{m[i,j]})"
+          return false
+        end
+      end
+    end
+  end
+  true
+end
+

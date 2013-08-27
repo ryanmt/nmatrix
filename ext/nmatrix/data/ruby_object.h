@@ -116,27 +116,19 @@ class RubyObject {
   inline operator int16_t() const { RETURN_OBJ2NUM(NUM2INT)         }
   inline operator uint16_t() const { RETURN_OBJ2NUM(NUM2UINT)       }
   inline operator int32_t() const { RETURN_OBJ2NUM(NUM2LONG)        }
+  inline operator VALUE() const { return rval; }
   //inline operator uint32_t() const { return NUM2ULONG(this->rval);      }
   inline operator int64_t() const { RETURN_OBJ2NUM(NUM2LONG)        }
   inline operator uint64_t() const { RETURN_OBJ2NUM(NUM2ULONG)      }
   inline operator double()   const { RETURN_OBJ2NUM(NUM2DBL)        }
   inline operator float()  const { RETURN_OBJ2NUM(NUM2DBL)          }
 
-  //template <typename IntType>
-  //inline operator Rational<typename std::enable_if<std::is_integral<IntType>::value, IntType>::type>() const { return this->to<Rational<IntType> >(); }
+  inline operator Rational32() const { return this->to<Rational32>();   }
+  inline operator Rational64() const { return this->to<Rational64>();   }
+  inline operator Rational128() const { return this->to<Rational128>(); }
 
-  //template <typename IntType>
-  //inline operator Rational<typename std::enable_if<std::is_integral<IntType>::value, IntType>::type>&() const { static Rational<IntType> x = this->to<Rational<IntType> >(); return x; }
-  //inline operator Rational32() const { return this->to<Rational32>();   }
-  //inline operator Rational64() const { return this->to<Rational64>();   }
-  //inline operator Rational128() const { return this->to<Rational128>(); }
-
-  //template <typename FloatType>
-  //inline operator Complex<typename std::enable_if<std::is_floating_point<FloatType>::value, FloatType>::type>() const { return this->to<Complex<FloatType> >();    }
-
-  //template <typename FloatType>
-  //inline operator Complex<typename std::enable_if<std::is_floating_point<FloatType>::value, FloatType>::type>&() const { static Complex<FloatType> x = this->to<Complex<FloatType> >(); return x;    }
-
+  inline operator Complex64() const { return this->to<Complex64>(); }
+  inline operator Complex128() const { return this->to<Complex128>(); }
   /*
 	 * Copy constructors.
 	 */

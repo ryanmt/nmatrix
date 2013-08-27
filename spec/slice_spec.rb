@@ -27,29 +27,118 @@
 require File.dirname(__FILE__) + "/spec_helper.rb"
 
 describe "Slice operation" do
+
   [:dense, :list, :yale].each do |stype|
     context "for #{stype}" do
       before :each do
         @m = create_matrix(stype)
       end
 
-      unless stype == :yale
-        it "should have #is_ref? method" do
-          a = @m[0..1, 0..1]
-          b = @m.slice(0..1, 0..1)
+      if stype == :yale
+        it "should binary search for the left boundary of a partial row of stored indices correctly" do
+          n = NMatrix.new(:yale, 10, :int32)
+          n[3,0] = 1
+          #n[3,2] = 2
+          n[3,3] = 3
+          n[3,4] = 4
+          n[3,6] = 5
+          n[3,8] = 6
+          n[3,9] = 7
+          vs = []
+          is = []
+          js = []
+          n[3,1..9].each_stored_with_indices do |v,i,j|
+            vs << v
+            is << i
+            js << j
+          end
 
+          vs.should == [3,4,5,6,7]
+          js.should == [2,3,5,7,8]
+          is.should == [0,0,0,0,0]
+        end
+      elsif stype == :list
+        it "should iterate across a partial row of stored indices" do
+          vs = []
+          is = []
+          js = []
 
-          @m.is_ref?.should be_false
-          a.is_ref?.should be_true
-          b.is_ref?.should be_false
+          STDERR.puts("now") if stype == :yale
+          @m[2,1..2].each_stored_with_indices do |v,i,j|
+            vs << v
+            is << i
+            js << j
+          end
+
+          vs.should == [7,8]
+          is.should == [0,0]
+          js.should == [0,1]
+        end
+      end
+
+      unless stype == :dense
+        it "should iterate across a row of stored indices" do
+
+          vs = []
+          is = []
+          js = []
+          @m[2,0..2].each_stored_with_indices do |v,i,j|
+            vs << v
+            is << i
+            js << j
+          end
+          vs.should == (stype == :yale ? [8,6,7] : [6,7,8])
+          is.should == [0,0,0]
+          js.should == (stype == :yale ? [2,0,1] : [0,1,2])
         end
 
-        it "reference should compare with non-reference" do
-          @m.slice(1..2,0..1).should == @m[1..2, 0..1]
-          @m[1..2,0..1].should == @m.slice(1..2, 0..1)
-          @m[1..2,0..1].should == @m[1..2, 0..1]
+        it "should iterate across a submatrix of stored indices" do
+          vs = []
+          is = []
+          js = []
+          @m[0..1,1..2].each_stored_with_indices do |v,i,j|
+            vs << v
+            is << i
+            js << j
+          end
+
+          vs.should == (stype == :yale ? [4,1,2,5] : [1,2,4,5])
+          is.should == (stype == :yale ? [1,0,0,1] : [0,0,1,1])
+          js.should == (stype == :yale ? [0,0,1,1] : [0,1,0,1])
         end
-      end # unless stype == :yale
+      end
+
+      it "should return correct shape and 1st-order supershape" do
+        x = NMatrix.random([10,12])
+        y = x[0...8,5...12]
+        y.shape.should == [8,7]
+        y.supershape.should == [10,12]
+      end
+
+      it "should return correct 1st- and 2nd-order supershape" do
+        pending "Not yet sure if we ever want to enable reference slices of reference slices"
+        x = NMatrix.random([10,12])
+        y = x[0...8,5...12]
+        z = y[0...3,0...4]
+        z.supershape(2).should == y.supershape(1)
+        z.supershape(1).should == [8,7]
+      end
+
+      it "should have #is_ref? method" do
+        a = @m[0..1, 0..1]
+        b = @m.slice(0..1, 0..1)
+
+
+        @m.is_ref?.should be_false
+        a.is_ref?.should be_true
+        b.is_ref?.should be_false
+      end
+
+      it "reference should compare with non-reference" do
+        @m.slice(1..2,0..1).should == @m[1..2, 0..1]
+        @m[1..2,0..1].should == @m.slice(1..2, 0..1)
+        @m[1..2,0..1].should == @m[1..2, 0..1]
+      end
 
       context "with copying" do
         it 'should return an NMatrix' do
@@ -66,7 +155,7 @@ describe "Slice operation" do
           @m[2,1].should eql(7)
         end
 
-        it 'should return a 1x2 vector with refs to self elements' do
+        it 'should return a 1x2 matrix with refs to self elements' do
           n = @m.slice(0,1..2)
           n.shape.should eql([1,2])
 
@@ -105,211 +194,178 @@ describe "Slice operation" do
         end
       end
 
+      # Yale:
+      #context "by copy" do
+        #it "should correctly preserve zeros" do
+        #  @m = NMatrix.new(:yale, 3, :int64)
+        #  column_slice = @m.column(2, :copy)
+        #  column_slice[0].should == 0
+        #  column_slice[1].should == 0
+        #  column_slice[2].should == 0
+        #end
+      #end
 
-
-      if stype == :yale
-        context "by reference" do
-          it "should raise an error" do
-            expect{ @m[1..2,1..2] }.to raise_error(NotImplementedError)
-          end
+      context "by reference" do
+        it 'should return an NMatrix' do
+          n = @m[0..1,0..1]
+          nm_eql(n, NMatrix.new([2,2], [0,1,3,4], :int32)).should be_true
         end
 
-        context "by copy" do
-          it "should correctly preserve zeros" do
-            @m = NMatrix.new(:yale, 3, :int64)
-            column_slice = @m.column(2, :copy)
-            column_slice[0].should == 0
-            column_slice[1].should == 0
-            column_slice[2].should == 0
-          end
+        it 'should return a 2x2 matrix with refs to self elements' do
+          n = @m[1..2,0..1]
+          n.shape.should eql([2,2])
+
+          n[0,0].should == @m[1,0]
+          n[0,0] = -9
+          @m[1,0].should eql(-9)
         end
-      else
-        context "by reference" do
-          it 'should return an NMatrix' do
-            n = @m[0..1,0..1]
-            nm_eql(n, NMatrix.new([2,2], [0,1,3,4], :int32)).should be_true
+
+        it 'should return a 1x2 vector with refs to self elements' do
+          n = @m[0,1..2]
+          n.shape.should eql([1,2])
+
+          n[0].should == @m[0,1]
+          n[0] = -9
+          @m[0,1].should eql(-9)
+        end
+
+        it 'should return a 2x1 vector with refs to self elements' do
+          n = @m[0..1,1]
+          n.shape.should eql([2,1])
+
+          n[0].should == @m[0,1]
+          n[0] = -9
+          @m[0,1].should eql(-9)
+        end
+
+        it 'should slice again' do
+          n = @m[1..2, 1..2]
+          nm_eql(n[1,0..1], NVector.new(2, [7,8], :int32).transpose).should be_true
+        end
+
+        it 'should be correct slice for range 0..2 and 0...3' do
+          @m[0..2,0..2].should == @m[0...3,0...3]
+        end
+
+        if stype == :dense
+          [:byte,:int8,:int16,:int32,:int64,:float32,:float64,:rational64,:rational128].each do |left_dtype|
+            [:byte,:int8,:int16,:int32,:int64,:float32,:float64,:rational64,:rational128].each do |right_dtype|
+
+              # Won't work if they're both 1-byte, due to overflow.
+              next if [:byte,:int8].include?(left_dtype) && [:byte,:int8].include?(right_dtype)
+
+              # For now, don't bother testing int-int mult.
+              #next if [:int8,:int16,:int32,:int64].include?(left_dtype) && [:int8,:int16,:int32,:int64].include?(right_dtype)
+              it "handles #{left_dtype.to_s} dot #{right_dtype.to_s} matrix multiplication" do
+                #STDERR.puts "dtype=#{dtype.to_s}"
+                #STDERR.puts "2"
+
+                nary = if left_dtype.to_s =~ /complex/
+                         COMPLEX_MATRIX43A_ARRAY
+                       elsif left_dtype.to_s =~ /rational/
+                         RATIONAL_MATRIX43A_ARRAY
+                       else
+                         MATRIX43A_ARRAY
+                       end
+
+                mary = if right_dtype.to_s =~ /complex/
+                         COMPLEX_MATRIX32A_ARRAY
+                       elsif right_dtype.to_s =~ /rational/
+                         RATIONAL_MATRIX32A_ARRAY
+                       else
+                         MATRIX32A_ARRAY
+                       end
+
+                n = NMatrix.new([4,3], nary, left_dtype)[1..3,1..2]
+                m = NMatrix.new([3,2], mary, right_dtype)[1..2,0..1]
+
+                r = n.dot m
+                r.shape.should eql([3,2])
+
+                r[0,0].should == 219.0
+                r[0,1].should == 185.0
+                r[1,0].should == 244.0
+                r[1,1].should == 205.0
+                r[2,0].should == 42.0
+                r[2,1].should == 35.0
+
+              end
+            end
           end
 
-          it 'should return a 2x2 matrix with refs to self elements' do
+          context "operations" do
+
+            it "correctly transposes slices" do
+              @m[0...3,0].transpose.should eq NMatrix[[0, 3, 6]]
+            end
+
+            it "adds slices" do
+              (NMatrix[[0,0,0]] + @m[1,0..2]).should eq NMatrix[[3, 4, 5]]
+            end
+
+            it "scalar adds to slices" do
+              (@m[1,0..2]+1).should eq NMatrix[[4, 5, 6]]
+            end
+
+            it "compares slices to scalars" do
+              (@m[1, 0..2] > 2).each { |e| (e != 0).should be_true }
+            end
+
+            it "iterates only over elements in the slice" do
+              els = []
+              @m[1, 0..2].each { |e| els << e }
+              els.size.should eq 3
+              els[0].should eq 3
+              els[1].should eq 4
+              els[2].should eq 5
+            end
+
+            it "iterates with index only over elements in the slice" do
+              els = []
+              @m[1, 0..2].each_stored_with_indices { |a| els << a }
+              els.size.should eq 3
+              els[0].should eq [3, 0, 0]
+              els[1].should eq [4, 0, 1]
+              els[2].should eq [5, 0, 2]
+            end
+
+          end
+
+        end
+
+        it 'should be cleaned up by garbage collector without errors'  do
+          1.times do
             n = @m[1..2,0..1]
-            n.shape.should eql([2,2])
-
-            n[0,0].should == @m[1,0]
-            n[0,0] = -9
-            @m[1,0].should eql(-9)
           end
-
-          it 'should return a 1x2 vector with refs to self elements' do
-            n = @m[0,1..2]
-            n.shape.should eql([1,2])
-
-            n[0].should == @m[0,1]
-            n[0] = -9
-            @m[0,1].should eql(-9)
+          GC.start
+          @m.should == NMatrix.new(:dense, [3,3], (0..9).to_a, :int32).cast(stype, :int32)
+          n = nil
+          1.times do
+            m = NMatrix.new(:dense, [2,2], [1,2,3,4]).cast(stype, :int32)
+            n = m[0..1,0..1]
           end
+          GC.start
+          n.should == NMatrix.new(:dense, [2,2], [1,2,3,4]).cast(stype, :int32)
+        end
 
-          it 'should return a 2x1 vector with refs to self elements' do
-            n = @m[0..1,1]
-            n.shape.should eql([2,1])
+        [:dense, :list, :yale].each do |cast_type|
+          it "should cast from #{stype.upcase} to #{cast_type.upcase}" do
 
-            n[0].should == @m[0,1]
-            n[0] = -9
-            @m[0,1].should eql(-9)
-          end
+            nm_eql(@m[1..2, 1..2].cast(cast_type), @m[1..2,1..2]).should be_true
+            nm_eql(@m[0..1, 1..2].cast(cast_type), @m[0..1,1..2]).should be_true
+            nm_eql(@m[1..2, 0..1].cast(cast_type), @m[1..2,0..1]).should be_true
+            nm_eql(@m[0..1, 0..1].cast(cast_type), @m[0..1,0..1]).should be_true
 
-          it 'should slice again' do
-            n = @m[1..2, 1..2]
-            nm_eql(n[1,0..1], NVector.new(2, [7,8], :int32).transpose).should be_true
-          end
+            # Non square
+            nm_eql(@m[0..2, 1..2].cast(cast_type), @m[0..2,1..2]).should be_true
+            nm_eql(@m[1..2, 0..2].cast(cast_type), @m[1..2,0..2]).should be_true
 
-          it 'should be correct slice for range 0..2 and 0...3' do
-            @m[0..2,0..2].should == @m[0...3,0...3]
-          end
-
-          if stype == :dense
-            [:byte,:int8,:int16,:int32,:int64,:float32,:float64,:rational64,:rational128].each do |left_dtype|
-              [:byte,:int8,:int16,:int32,:int64,:float32,:float64,:rational64,:rational128].each do |right_dtype|
-
-                # Won't work if they're both 1-byte, due to overflow.
-                next if [:byte,:int8].include?(left_dtype) && [:byte,:int8].include?(right_dtype)
-
-                # For now, don't bother testing int-int mult.
-                #next if [:int8,:int16,:int32,:int64].include?(left_dtype) && [:int8,:int16,:int32,:int64].include?(right_dtype)
-                it "handles #{left_dtype.to_s} dot #{right_dtype.to_s} matrix multiplication" do
-                  #STDERR.puts "dtype=#{dtype.to_s}"
-                  #STDERR.puts "2"
-
-                  nary = if left_dtype.to_s =~ /complex/
-                           COMPLEX_MATRIX43A_ARRAY
-                         elsif left_dtype.to_s =~ /rational/
-                           RATIONAL_MATRIX43A_ARRAY
-                         else
-                           MATRIX43A_ARRAY
-                         end
-
-                  mary = if right_dtype.to_s =~ /complex/
-                           COMPLEX_MATRIX32A_ARRAY
-                         elsif right_dtype.to_s =~ /rational/
-                           RATIONAL_MATRIX32A_ARRAY
-                         else
-                           MATRIX32A_ARRAY
-                         end
-
-                  n = NMatrix.new([4,3], nary, left_dtype)[1..3,1..2]
-                  m = NMatrix.new([3,2], mary, right_dtype)[1..2,0..1]
-
-                  r = n.dot m
-                  r.shape.should eql([3,2])
-
-                  r[0,0].should == 219.0
-                  r[0,1].should == 185.0
-                  r[1,0].should == 244.0
-                  r[1,1].should == 205.0
-                  r[2,0].should == 42.0
-                  r[2,1].should == 35.0
-
-                end
-              end
-            end
-
-            context "operations" do 
-
-              it "correctly transposes slices" do
-                @m[0...3,0].transpose.should eq N[[0, 3, 6]]
-              end
-
-              it "adds slices" do 
-                (N[[0,0,0]] + @m[1,0..2]).should eq N[[3, 4, 5]]
-              end
-
-              it "scalar adds to slices" do
-                (@m[1,0..2]+1).should eq N[[4, 5, 6]]
-              end
-
-              it "compares slices to scalars" do
-                (@m[1, 0..2] > 2).each { |e| (e != 0).should be_true }
-              end
-
-              it "iterates only over elements in the slice" do 
-                els = []
-                @m[1, 0..2].each { |e| els << e }
-                els.size.should eq 3
-                els[0].should eq 3
-                els[1].should eq 4
-                els[2].should eq 5
-              end
-
-              it "iterates with index only over elements in the slice" do 
-                els = []
-                @m[1, 0..2].each_stored_with_indices { |a| els << a }
-                els.size.should eq 3
-                els[0].should eq [3, 0, 0]
-                els[1].should eq [4, 0, 1]
-                els[2].should eq [5, 0, 2]
-              end
-
-            end
-
-          end
-
-          it 'should be cleaned up by garbage collector without errors'  do
-            1.times do
-              n = @m[1..2,0..1]
-            end
-            GC.start
-            @m.should == NMatrix.new(:dense, [3,3], (0..9).to_a, :int32).cast(stype, :int32)
-            n = nil
-            1.times do
-              m = NMatrix.new(:dense, [2,2], [1,2,3,4]).cast(stype, :int32)
-              n = m[0..1,0..1]
-            end
-            GC.start
-            n.should == NMatrix.new(:dense, [2,2], [1,2,3,4]).cast(stype, :int32)
-          end
-
-          [:dense, :list, :yale].each do |cast_type|
-            it "should cast from #{stype.upcase} to #{cast_type.upcase}" do
-              nm_eql(@m[1..2, 1..2].cast(cast_type, :int32), @m[1..2,1..2]).should be_true
-              nm_eql(@m[0..1, 1..2].cast(cast_type, :int32), @m[0..1,1..2]).should be_true
-              nm_eql(@m[1..2, 0..1].cast(cast_type, :int32), @m[1..2,0..1]).should be_true
-              nm_eql(@m[0..1, 0..1].cast(cast_type, :int32), @m[0..1,0..1]).should be_true
-
-              # Non square
-              nm_eql(@m[0..2, 1..2].cast(cast_type, :int32), @m[0..2,1..2]).should be_true
-              nm_eql(@m[1..2, 0..2].cast(cast_type, :int32), @m[1..2,0..2]).should be_true
-
-              # Full
-              nm_eql(@m[0..2, 0..2].cast(cast_type, :int32), @m).should be_true
-            end
+            # Full
+            nm_eql(@m[0..2, 0..2].cast(cast_type), @m).should be_true
           end
         end
       end
-    end # unless stype == :yale
-  end
 
-  # Stupid but independent comparison
-  def nm_eql(n, m) #:nodoc:
-    if n.shape != m.shape
-      false
-    elsif n.is_a?(NVector)
-      return false unless m.is_a?(NVector) # don't compare NV to NM
-      long_shape = n.shape[0] == 1 ? n.shape[1] : n.shape[0]
-      long_shape.times do |j|
-        if n[j] != m[j]
-          puts "n[#{j}] != m[#{j}] (#{n[j]} != #{m[j]})"
-          return false
-        end
-      end
-    else # NMatrix
-      n.shape[0].times do |i|
-        n.shape[1].times do |j|
-          if n[i,j] != m[i,j]
-            puts "n[#{i},#{j}] != m[#{i},#{j}] (#{n[i,j]} != #{m[i,j]})"
-            return false
-          end
-        end
-      end
     end
-    true
   end
 end

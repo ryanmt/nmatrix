@@ -65,16 +65,11 @@ describe NMatrix do
     end
 
     it "should perform element-wise addition" do
-      r = NMatrix.new(:dense, 3, [52,30,0,0,-8,0,6,0,0], :int64).cast(:yale, :int64)
-      r[0,0] = 52
-      r[1,1] = -8
-      q = @n + @m
-      q.should == r
+      (@n+@m).should == NMatrix.new(:dense, 3, [52,30,0,0,-8,0,6,0,0], :int64).cast(:yale, :int64)
     end
 
     it "should perform element-wise subtraction" do
-      r = NMatrix.new(:dense, 3, [52,30,10,0,88,0,6,0,0], :int64).cast(:yale, :int64)
-      (@n-@m).should == r
+      (@n-@m).should == NMatrix.new(:dense, 3, [52,30,10,0,88,0,6,0,0], :int64).cast(:yale, :int64)
     end
 
     it "should perform element-wise multiplication" do
@@ -94,31 +89,27 @@ describe NMatrix do
     end
 
     it "should handle element-wise equality (=~)" do
-      r = NMatrix.new(:dense, 3, [false,false,false,true,false,true,false,true,true], :object).cast(:yale, :object)
-
-      (@n =~ @m).should == r
+      (@n =~ @m).should == NMatrix.new(:dense, 3, [false,false,false,true,false,true,false,true,true], :object).cast(:yale, :object, false)
     end
 
     it "should handle element-wise inequality (!~)" do
-      r = NMatrix.new(:dense, 3, [true,true,true,false,true,false,true,false,false], :object).cast(:yale, :object)
-
-      (@n !~ @m).should == r
+      (@n !~ @m).should == NMatrix.new(:dense, 3, [true,true,true,false,true,false,true,false,false], :object).cast(:yale, :object, true)
     end
 
     it "should handle element-wise less-than (<)" do
-      (@m < @n).should == NMatrix.new(:dense, 3, [true,true,true,false,true,false,true,false,false], :object).cast(:yale, :object)
+      (@m < @n).should == NMatrix.new(:dense, 3, [true,true,true,false,true,false,true,false,false], :object).cast(:yale, :object, true)
     end
 
     it "should handle element-wise greater-than (>)" do
-      (@n > @m).should == NMatrix.new(:dense, 3, [true,true,true,false,true,false,true,false,false], :object).cast(:yale, :object)
+      (@n > @m).should == NMatrix.new(:dense, 3, [true,true,true,false,true,false,true,false,false], :object).cast(:yale, :object, false)
     end
 
     it "should handle element-wise greater-than-or-equals (>=)" do
-      (@n >= @m).should == NMatrix.new(:dense, 3, true, :object).cast(:yale,:object)
+      (@n >= @m).should == NMatrix.new(:dense, 3, true, :object).cast(:yale,:object, true)
     end
 
     it "should handle element-wise less-than-or-equals (<=)" do
-      r = NMatrix.new(:dense, 3, [false,false,false,true,false,true,false,true,true], :object).cast(:yale, :object)
+      r = NMatrix.new(:dense, 3, [false,false,false,true,false,true,false,true,true], :object).cast(:yale, :object, false)
       (@n <= @m).should == r
     end
   end
@@ -218,6 +209,21 @@ describe NMatrix do
   end
 
   context "dense" do
+    context "scalar arithmetic" do
+      before :each do
+        @n = NMatrix.new(:dense, 2, [1,2,3,4], :int64)
+      end
+
+      it "works for integers" do
+        (@n+1).should == NMatrix.new(:dense, 2, [2,3,4,5], :int64)
+      end
+
+      #it "works for complex64" do
+      #  n = @n.cast(:dtype => :complex64)
+      #  (n + 10.0).to_a.should == [Complex(11.0), Complex(12.0), Complex(13.0), Complex(14.0)]
+      #end
+    end
+
     context "elementwise arithmetic" do
       before :each do
         @n = NMatrix.new(:dense, 2, [1,2,3,4], :int64)
@@ -246,16 +252,14 @@ describe NMatrix do
         r.should == NMatrix.new(:dense, [2,2], [-1, -2, 1, 0], :int64)
       end
 
-      #it "exponentiates" do
-      #  r = @n ** 2
-      #  # TODO: We might have problems with the dtype.
-      #  r.should == NMatrix.new(:dense, [2,2], [1, 4, 9, 16], :int64)
-      #end
+      it "exponentiates" do
+        r = @n ** 2
+        # TODO: We might have problems with the dtype.
+        r.should == NMatrix.new(:dense, [2,2], [1, 4, 9, 16], :int64)
+      end
 
       it "modulo" do
-        pending "% operator not yet implemented"
-        r = @n % @m
-        r.should == NMatrix.new(:dense, [2,2], [0, 1, 2, 3], :int64)
+        (@n % (@m + 2)).should == NMatrix.new(:dense, [2,2], [-1, 0, 1, 4], :int64)
       end
     end
 

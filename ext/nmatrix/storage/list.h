@@ -40,13 +40,9 @@
  */
 
 #include "types.h"
-
 #include "data/data.h"
-
 #include "common.h"
-
 #include "util/sl_list.h"
-
 #include "nmatrix.h"
 
 /*
@@ -85,8 +81,9 @@ extern "C" {
   VALUE nm_list_each_with_indices(VALUE nmatrix, bool stored);
   void* nm_list_storage_ref(STORAGE* s, SLICE* slice);
   void* nm_list_storage_get(STORAGE* s, SLICE* slice);
-  void* nm_list_storage_insert(STORAGE* s, SLICE* slice, void* val);
-  void* nm_list_storage_remove(STORAGE* s, SLICE* slice);
+  NODE* nm_list_storage_insert(STORAGE* s, SLICE* slice, void* val);
+  void nm_list_storage_set(VALUE left, SLICE* slice, VALUE right);
+  void  nm_list_storage_remove(STORAGE* s, SLICE* slice);
 
   ///////////
   // Tests //
@@ -121,7 +118,7 @@ extern "C" {
 
   LIST_STORAGE* nm_list_storage_copy(const LIST_STORAGE* rhs);
   STORAGE*      nm_list_storage_copy_transposed(const STORAGE* rhs_base);
-  STORAGE*      nm_list_storage_cast_copy(const STORAGE* rhs, nm::dtype_t new_dtype);
+  STORAGE*      nm_list_storage_cast_copy(const STORAGE* rhs, nm::dtype_t new_dtype, void*);
   VALUE         nm_list_storage_to_hash(const LIST_STORAGE* s, const nm::dtype_t dtype);
 
   // Exposed functions

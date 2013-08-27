@@ -33,6 +33,7 @@
 #include <ruby.h>
 #include <algorithm> // std::min
 #include <iostream>
+#include <vector>
 
 /*
  * Project Includes
@@ -45,7 +46,7 @@
 #include "common.h"
 #include "list.h"
 
-#include "util/math.h"
+#include "math/math.h"
 #include "util/sl_list.h"
 
 /*
@@ -83,7 +84,7 @@ public:
 
   size_t dim() const { return ref->dim; }
 
-  size_t shape(size_t rec) const {
+  size_t ref_shape(size_t rec) const {
     return shape_[ref->dim - rec - 1];
   }
 
@@ -143,7 +144,7 @@ static void map_empty_stored_r(RecurseData& result, RecurseData& s, LIST* x, con
 
   // For reference matrices, make sure we start in the correct place.
   size_t offset   = result.offset(rec);
-  size_t x_shape  = result.shape(rec);
+  size_t x_shape  = result.ref_shape(rec);
 
   while (curr && curr->key < offset) {  curr = curr->next;  }
   if (curr && curr->key - offset >= x_shape) curr = NULL;
@@ -188,8 +189,8 @@ static void map_merged_stored_r(RecurseData& result, RecurseData& left, RecurseD
   while (lcurr && lcurr->key < left.offset(rec))  {  lcurr = lcurr->next;  }
   while (rcurr && rcurr->key < right.offset(rec)) {  rcurr = rcurr->next;  }
 
-  if (rcurr && rcurr->key - right.offset(rec) >= result.shape(rec)) rcurr = NULL;
-  if (lcurr && lcurr->key - left.offset(rec) >= result.shape(rec))  lcurr = NULL;
+  if (rcurr && rcurr->key - right.offset(rec) >= result.ref_shape(rec)) rcurr = NULL;
+  if (lcurr && lcurr->key - left.offset(rec) >= result.ref_shape(rec))  lcurr = NULL;
 
   if (rec) {
     while (lcurr || rcurr) {
@@ -214,8 +215,8 @@ static void map_merged_stored_r(RecurseData& result, RecurseData& left, RecurseD
       if (!val->first) nm::list::del(val, 0); // empty list -- don't insert
       else xcurr = nm::list::insert_helper(x, xcurr, key, val);
 
-      if (rcurr && rcurr->key - right.offset(rec) >= result.shape(rec)) rcurr = NULL;
-      if (lcurr && lcurr->key - left.offset(rec) >= result.shape(rec)) lcurr = NULL;
+      if (rcurr && rcurr->key - right.offset(rec) >= result.ref_shape(rec)) rcurr = NULL;
+      if (lcurr && lcurr->key - left.offset(rec) >= result.ref_shape(rec)) lcurr = NULL;
     }
   } else {
     while (lcurr || rcurr) {
@@ -239,8 +240,8 @@ static void map_merged_stored_r(RecurseData& result, RecurseData& left, RecurseD
       if (rb_funcall(val, rb_intern("!="), 1, result.init_obj()) == Qtrue)
         xcurr = nm::list::insert_helper(x, xcurr, key, val);
 
-      if (rcurr && rcurr->key - right.offset(rec) >= result.shape(rec)) rcurr = NULL;
-      if (lcurr && lcurr->key - left.offset(rec) >= result.shape(rec)) lcurr = NULL;
+      if (rcurr && rcurr->key - right.offset(rec) >= result.ref_shape(rec)) rcurr = NULL;
+      if (lcurr && lcurr->key - left.offset(rec) >= result.ref_shape(rec)) lcurr = NULL;
     }
   }
 }
@@ -293,10 +294,10 @@ void nm_list_storage_delete(STORAGE* s) {
     if (storage->count-- == 1) {
       list::del( storage->rows, storage->dim - 1 );
 
-      free(storage->shape);
-      free(storage->offset);
-      free(storage->default_val);
-      free(s);
+      xfree(storage->shape);
+      xfree(storage->offset);
+      xfree(storage->default_val);
+      xfree(s);
     }
   }
 }
@@ -309,9 +310,9 @@ void nm_list_storage_delete_ref(STORAGE* s) {
     LIST_STORAGE* storage = (LIST_STORAGE*)s;
 
     nm_list_storage_delete( reinterpret_cast<STORAGE*>(storage->src ) );
-    free(storage->shape);
-    free(storage->offset);
-    free(s);
+    xfree(storage->shape);
+    xfree(storage->offset);
+    xfree(s);
   }
 }
 
@@ -334,7 +335,7 @@ void nm_list_storage_mark(void* storage_base) {
 /*
  * Documentation goes here.
  */
-NODE* list_storage_get_single_node(LIST_STORAGE* s, SLICE* slice)
+static NODE* list_storage_get_single_node(LIST_STORAGE* s, SLICE* slice)
 {
   size_t r;
   LIST*  l = s->rows;
@@ -358,7 +359,7 @@ static void each_empty_with_indices_r(nm::list_storage::RecurseData& s, size_t r
   VALUE empty  = s.dtype() == nm::RUBYOBJ ? *reinterpret_cast<VALUE*>(s.init()) : s.init_obj();
 
   if (rec) {
-    for (long index = 0; index < s.shape(rec); ++index) {
+    for (long index = 0; index < s.ref_shape(rec); ++index) {
       // Don't do an unshift/shift here -- we'll let that be handled in the lowest-level iteration (recursions == 0)
       rb_ary_push(stack, LONG2NUM(index));
       each_empty_with_indices_r(s, rec-1, stack);
@@ -366,7 +367,7 @@ static void each_empty_with_indices_r(nm::list_storage::RecurseData& s, size_t r
     }
   } else {
     rb_ary_unshift(stack, empty);
-    for (long index = 0; index < s.shape(rec); ++index) {
+    for (long index = 0; index < s.ref_shape(rec); ++index) {
       rb_ary_push(stack, LONG2NUM(index));
       rb_yield_splat(stack);
       rb_ary_pop(stack);
@@ -382,18 +383,18 @@ static void each_with_indices_r(nm::list_storage::RecurseData& s, const LIST* l,
   NODE*  curr  = l->first;
 
   size_t offset = s.offset(rec);
-  size_t shape  = s.shape(rec);
+  size_t shape  = s.ref_shape(rec);
 
   while (curr && curr->key < offset) curr = curr->next;
-  if (curr && curr->key >= shape) curr = NULL;
+  if (curr && curr->key - offset >= shape) curr = NULL;
 
 
   if (rec) {
-    for (long index = 0; index < shape; ++index) {
+    for (long index = 0; index < shape; ++index) { // index in reference
       rb_ary_push(stack, LONG2NUM(index));
       if (!curr || index < curr->key - offset) {
         each_empty_with_indices_r(s, rec-1, stack);
-      } else {
+      } else { // index == curr->key - offset
         each_with_indices_r(s, reinterpret_cast<const LIST*>(curr->val), rec-1, stack);
         curr = curr->next;
       }
@@ -407,7 +408,7 @@ static void each_with_indices_r(nm::list_storage::RecurseData& s, const LIST* l,
       if (!curr || index < curr->key - offset) {
         rb_ary_unshift(stack, s.dtype() == nm::RUBYOBJ ? *reinterpret_cast<VALUE*>(s.init()) : s.init_obj());
 
-      } else { // index == curr->key
+      } else { // index == curr->key - offset
         rb_ary_unshift(stack, s.dtype() == nm::RUBYOBJ ? *reinterpret_cast<VALUE*>(curr->val) : rubyobj_from_cval(curr->val, s.dtype()).rval);
 
         curr = curr->next;
@@ -429,7 +430,7 @@ static void each_stored_with_indices_r(nm::list_storage::RecurseData& s, const L
   NODE* curr = l->first;
 
   size_t offset = s.offset(rec);
-  size_t shape  = s.shape(rec);
+  size_t shape  = s.ref_shape(rec);
 
   while (curr && curr->key < offset) { curr = curr->next; }
   if (curr && curr->key - offset >= shape) curr = NULL;
@@ -460,7 +461,7 @@ static void each_stored_with_indices_r(nm::list_storage::RecurseData& s, const L
       rb_ary_pop(stack);
 
       curr = curr->next;
-      if (curr && curr->key >= shape) curr = NULL;
+      if (curr && curr->key - offset >= shape) curr = NULL;
     }
   }
 }
@@ -500,7 +501,6 @@ VALUE nm_list_map_merged_stored(VALUE left, VALUE right, VALUE init) {
   nm::list_storage::RecurseData sdata(s);
 
   void* scalar_init = NULL;
-  size_t* shape;
 
   // right might be a scalar, in which case this is a scalar operation.
   if (TYPE(right) != T_DATA || (RDATA(right)->dfree != (RUBY_DATA_FUNC)nm_delete && RDATA(right)->dfree != (RUBY_DATA_FUNC)nm_delete_ref)) {
@@ -541,34 +541,32 @@ VALUE nm_list_map_merged_stored(VALUE left, VALUE right, VALUE init) {
 }
 
 
+/*
+ * Copy a slice of a list matrix into a regular list matrix.
+ */
+static LIST* slice_copy(const LIST_STORAGE* src, LIST* src_rows, size_t* coords, size_t* lengths, size_t n) {
 
-static LIST* slice_copy(const LIST_STORAGE *src, LIST *src_rows, size_t *coords, size_t *lengths, size_t n) {
-  NODE *src_node;
-  LIST *dst_rows = NULL;
   void *val = NULL;
   int key;
   
-  dst_rows = list::create();
-  src_node = src_rows->first;
+  LIST* dst_rows = list::create();
+  NODE* src_node = src_rows->first;
 
   while (src_node) {
     key = src_node->key - (src->offset[n] + coords[n]);
     
     if (key >= 0 && (size_t)key < lengths[n]) {
       if (src->dim - n > 1) {
-        val = slice_copy(src,  
-          reinterpret_cast<LIST*>(src_node->val), 
-          coords,
-          lengths,
-          n + 1);  
+        val = slice_copy( src,
+                          reinterpret_cast<LIST*>(src_node->val),
+                          coords,
+                          lengths,
+                          n + 1    );
 
-        if (val) 
-          list::insert_with_copy(dst_rows, key, val, sizeof(LIST));          
-        
+        if (val) {  list::insert_copy(dst_rows, false, key, val, sizeof(LIST)); }
       }
-      else {
-        list::insert_with_copy(dst_rows, key, src_node->val, DTYPE_SIZES[src->dtype]);
-      }
+
+      else list::insert_copy(dst_rows, false, key, src_node->val, DTYPE_SIZES[src->dtype]);
     }
 
     src_node = src_node->next;
@@ -586,10 +584,9 @@ void* nm_list_storage_get(STORAGE* storage, SLICE* slice) {
   NODE* n;
 
   if (slice->single) {
-    n = list_storage_get_single_node(s, slice); 
+    n = list_storage_get_single_node(s, slice);
     return (n ? n->val : s->default_val);
-  } 
-  else {
+  } else {
     void *init_val = ALLOC_N(char, DTYPE_SIZES[s->dtype]);
     memcpy(init_val, s->default_val, DTYPE_SIZES[s->dtype]);
 
@@ -597,7 +594,7 @@ void* nm_list_storage_get(STORAGE* storage, SLICE* slice) {
     memcpy(shape, slice->lengths, sizeof(size_t) * s->dim);
 
     ns = nm_list_storage_create(s->dtype, shape, s->dim, init_val);
-    
+
     ns->rows = slice_copy(s, s->rows, slice->coords, slice->lengths, 0);
     return ns;
   }
@@ -618,34 +615,104 @@ void* nm_list_storage_ref(STORAGE* storage, SLICE* slice) {
     return (n ? n->val : s->default_val);
   } 
   else {
-    ns = ALLOC( LIST_STORAGE );
+    ns              = ALLOC( LIST_STORAGE );
     
-    ns->dim = s->dim;
-    ns->dtype = s->dtype;
-    ns->offset     = ALLOC_N(size_t, ns->dim);
-    ns->shape      = ALLOC_N(size_t, ns->dim);
+    ns->dim         = s->dim;
+    ns->dtype       = s->dtype;
+    ns->offset      = ALLOC_N(size_t, ns->dim);
+    ns->shape       = ALLOC_N(size_t, ns->dim);
 
     for (size_t i = 0; i < ns->dim; ++i) {
       ns->offset[i] = slice->coords[i] + s->offset[i];
       ns->shape[i]  = slice->lengths[i];
     }
 
-    ns->rows = s->rows;
+    ns->rows        = s->rows;
     ns->default_val = s->default_val;
     
     s->src->count++;
-    ns->src = s->src;
+    ns->src         = s->src;
     
     return ns;
   }
 }
 
+
 /*
- * Documentation goes here.
+ * Recursive function, sets multiple values in a matrix from a single source value.
+ */
+static void slice_set_single(LIST_STORAGE* dest, LIST* l, void* val, size_t* coords, size_t* lengths, size_t n) {
+
+  // drill down into the structure
+  NODE* node = NULL;
+  if (dest->dim - n > 1) {
+    for (size_t i = 0; i < lengths[n]; ++i) {
+
+      size_t key = i + dest->offset[n] + coords[n];
+
+      if (!node) {
+        node = list::insert(l, false, key, list::create()); // try to insert list
+      } else if (!node->next || (node->next && node->next->key > key)) {
+        node = list::insert_after(node, key, list::create());
+      } else {
+        node = node->next; // correct rank already exists.
+      }
+
+      // cast it to a list and recurse
+      slice_set_single(dest, reinterpret_cast<LIST*>(node->val), val, coords, lengths, n + 1);
+    }
+  } else {
+    for (size_t i = 0; i < lengths[n]; ++i) {
+
+      size_t key = i + dest->offset[n] + coords[n];
+
+      if (!node)  {
+        node = list::insert_copy(l, true, key, val, DTYPE_SIZES[dest->dtype]);
+      } else {
+        node = list::replace_insert_after(node, key, val, true, DTYPE_SIZES[dest->dtype]);
+      }
+    }
+  }
+
+}
+
+
+/*
+ * Set a value or values in a list matrix.
+ */
+void nm_list_storage_set(VALUE left, SLICE* slice, VALUE right) {
+  LIST_STORAGE* s = NM_STORAGE_LIST(left);
+
+  if (TYPE(right) == T_DATA) {
+    if (RDATA(right)->dfree == (RUBY_DATA_FUNC)nm_delete || RDATA(right)->dfree == (RUBY_DATA_FUNC)nm_delete_ref) {
+      rb_raise(rb_eNotImpError, "this type of slicing not yet supported");
+    } else {
+      rb_raise(rb_eTypeError, "unrecognized type for slice assignment");
+    }
+  } else {
+    void* val = rubyobj_to_cval(right, s->dtype);
+
+    bool remove = !std::memcmp(val, s->default_val, s->dtype);
+
+    if (remove) {
+      xfree(val);
+      list::remove_recursive(s->rows, slice->coords, s->offset, slice->lengths, 0, s->dim);
+    } else {
+      slice_set_single(s, s->rows, val, slice->coords, slice->lengths, 0);
+      xfree(val);
+    }
+  }
+}
+
+
+/*
+ * Insert an entry directly in a row (not using copy! don't free after).
+ *
+ * Returns a pointer to the insertion location.
  *
  * TODO: Allow this function to accept an entire row and not just one value -- for slicing
  */
-void* nm_list_storage_insert(STORAGE* storage, SLICE* slice, void* val) {
+NODE* nm_list_storage_insert(STORAGE* storage, SLICE* slice, void* val) {
   LIST_STORAGE* s = (LIST_STORAGE*)storage;
   // Pretend dims = 2
   // Then coords is going to be size 2
@@ -660,23 +727,19 @@ void* nm_list_storage_insert(STORAGE* storage, SLICE* slice, void* val) {
     l = reinterpret_cast<LIST*>(n->val);
   }
 
-  n = list::insert(l, true, s->offset[s->dim - r] + slice->coords[s->dim - r], val);
-  return n->val;
+  return list::insert(l, true, s->offset[s->dim - r] + slice->coords[s->dim - r], val);
 }
 
 /*
- * Remove an item from list storage.
+ * Remove an item or slice from list storage.
  */
-void* nm_list_storage_remove(STORAGE* storage, SLICE* slice) {
+void nm_list_storage_remove(STORAGE* storage, SLICE* slice) {
   LIST_STORAGE* s = (LIST_STORAGE*)storage;
-  void* rm = NULL;
 
   // This returns a boolean, which will indicate whether s->rows is empty.
   // We can safely ignore it, since we never want to delete s->rows until
   // it's time to destroy the LIST_STORAGE object.
-  list::remove_recursive(s->rows, slice->coords, s->offset, 0, s->dim, rm);
-
-  return rm;
+  list::remove_recursive(s->rows, slice->coords, s->offset, slice->lengths, 0, s->dim);
 }
 
 ///////////
@@ -805,7 +868,7 @@ LIST_STORAGE* nm_list_storage_copy(const LIST_STORAGE* rhs)
 /*
  * List storage copy constructor C access with casting.
  */
-STORAGE* nm_list_storage_cast_copy(const STORAGE* rhs, dtype_t new_dtype) {
+STORAGE* nm_list_storage_cast_copy(const STORAGE* rhs, dtype_t new_dtype, void* dummy) {
   NAMED_LR_DTYPE_TEMPLATE_TABLE(ttable, nm::list_storage::cast_copy, LIST_STORAGE*, const LIST_STORAGE* rhs, dtype_t new_dtype);
 
   return (STORAGE*)ttable[new_dtype][rhs->dtype]((LIST_STORAGE*)rhs, new_dtype);
@@ -874,21 +937,21 @@ static bool eqeq_empty_r(RecurseData& s, const LIST* l, size_t rec, const TDType
 
   // For reference matrices, make sure we start in the correct place.
   while (curr && curr->key < s.offset(rec)) {  curr = curr->next;  }
-  if (curr && curr->key - s.offset(rec) >= s.shape(rec)) curr = NULL;
+  if (curr && curr->key - s.offset(rec) >= s.ref_shape(rec)) curr = NULL;
 
   if (rec) {
     while (curr) {
       if (!eqeq_empty_r<SDType,TDType>(s, reinterpret_cast<const LIST*>(curr->val), rec-1, t_init)) return false;
       curr = curr->next;
 
-      if (curr && curr->key - s.offset(rec) >= s.shape(rec)) curr = NULL;
+      if (curr && curr->key - s.offset(rec) >= s.ref_shape(rec)) curr = NULL;
     }
   } else {
     while (curr) {
       if (*reinterpret_cast<SDType*>(curr->val) != *t_init) return false;
       curr = curr->next;
 
-      if (curr && curr->key - s.offset(rec) >= s.shape(rec)) curr = NULL;
+      if (curr && curr->key - s.offset(rec) >= s.ref_shape(rec)) curr = NULL;
     }
   }
   return true;
@@ -909,8 +972,8 @@ static bool eqeq_r(RecurseData& left, RecurseData& right, const LIST* l, const L
   // For reference matrices, make sure we start in the correct place.
   while (lcurr && lcurr->key < left.offset(rec)) {  lcurr = lcurr->next;  }
   while (rcurr && rcurr->key < right.offset(rec)) {  rcurr = rcurr->next;  }
-  if (rcurr && rcurr->key - right.offset(rec) >= left.shape(rec)) rcurr = NULL;
-  if (lcurr && lcurr->key - left.offset(rec) >= left.shape(rec)) lcurr = NULL;
+  if (rcurr && rcurr->key - right.offset(rec) >= left.ref_shape(rec)) rcurr = NULL;
+  if (lcurr && lcurr->key - left.offset(rec) >= left.ref_shape(rec)) lcurr = NULL;
 
   bool compared = false;
 
@@ -929,15 +992,15 @@ static bool eqeq_r(RecurseData& left, RecurseData& right, const LIST* l, const L
         lcurr   = lcurr->next;
         rcurr   = rcurr->next;
       }
-      if (rcurr && rcurr->key - right.offset(rec) >= left.shape(rec)) rcurr = NULL;
-      if (lcurr && lcurr->key - left.offset(rec) >= left.shape(rec)) lcurr = NULL;
+      if (rcurr && rcurr->key - right.offset(rec) >= right.ref_shape(rec)) rcurr = NULL;
+      if (lcurr && lcurr->key - left.offset(rec)  >= left.ref_shape(rec)) lcurr = NULL;
       compared = true;
     }
   } else {
     while (lcurr || rcurr) {
 
-      if (rcurr && rcurr->key - right.offset(rec) >= left.shape(rec)) rcurr = NULL;
-      if (lcurr && lcurr->key - left.offset(rec) >= left.shape(rec)) lcurr = NULL;
+      if (rcurr && rcurr->key - right.offset(rec) >= left.ref_shape(rec)) rcurr = NULL;
+      if (lcurr && lcurr->key - left.offset(rec) >= left.ref_shape(rec)) lcurr = NULL;
 
       if (!rcurr || (lcurr && (lcurr->key - left.offset(rec) < rcurr->key - right.offset(rec)))) {
         if (*reinterpret_cast<LDType*>(lcurr->val) != *reinterpret_cast<const RDType*>(right.init())) return false;
@@ -950,8 +1013,8 @@ static bool eqeq_r(RecurseData& left, RecurseData& right, const LIST* l, const L
         lcurr         = lcurr->next;
         rcurr         = rcurr->next;
       }
-      if (rcurr && rcurr->key - right.offset(rec) >= left.shape(rec)) rcurr = NULL;
-      if (lcurr && lcurr->key - left.offset(rec) >= left.shape(rec)) lcurr = NULL;
+      if (rcurr && rcurr->key - right.offset(rec) >= right.ref_shape(rec)) rcurr = NULL;
+      if (lcurr && lcurr->key - left.offset(rec)  >= left.ref_shape(rec)) lcurr = NULL;
       compared = true;
     }
   }
@@ -984,6 +1047,6 @@ extern "C" {
      * Get the default_value property from a list matrix.
      */
     VALUE nm_list_default_value(VALUE self) {
-      return rubyobj_from_cval(NM_DEFAULT_VAL(self), NM_DTYPE(self)).rval;
+      return (NM_DTYPE(self) == nm::RUBYOBJ) ? *reinterpret_cast<VALUE*>(NM_DEFAULT_VAL(self)) : rubyobj_from_cval(NM_DEFAULT_VAL(self), NM_DTYPE(self)).rval;
     }
 } // end of extern "C" block

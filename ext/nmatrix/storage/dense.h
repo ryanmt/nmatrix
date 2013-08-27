@@ -85,7 +85,7 @@ VALUE nm_dense_each(VALUE nmatrix);
 VALUE nm_dense_each_with_indices(VALUE nmatrix);
 void*	nm_dense_storage_get(STORAGE* s, SLICE* slice);
 void*	nm_dense_storage_ref(STORAGE* s, SLICE* slice);
-void	nm_dense_storage_set(STORAGE* s, SLICE* slice, void* val);
+void  nm_dense_storage_set(VALUE left, SLICE* slice, VALUE right);
 
 ///////////
 // Tests //
@@ -114,7 +114,7 @@ void nm_dense_storage_coords(const DENSE_STORAGE* s, const size_t slice_pos, siz
 
 DENSE_STORAGE*  nm_dense_storage_copy(const DENSE_STORAGE* rhs);
 STORAGE*        nm_dense_storage_copy_transposed(const STORAGE* rhs_base);
-STORAGE*        nm_dense_storage_cast_copy(const STORAGE* rhs, nm::dtype_t new_dtype);
+STORAGE*        nm_dense_storage_cast_copy(const STORAGE* rhs, nm::dtype_t new_dtype, void*);
 
 } // end of extern "C" block
 

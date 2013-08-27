@@ -33,7 +33,8 @@ require 'rspec/core/rake_task'
 require 'rspec/core'
 require 'rspec/core/rake_task'
 RSpec::Core::RakeTask.new(:spec) do |spec|
-  spec.pattern = FileList['spec/**/*_spec.rb']
+  # Load nmatrix_spec first.
+  spec.pattern = FileList['spec/nmatrix_spec.rb', 'spec/**/*_spec.rb'].uniq
 end
 
 BASEDIR = Pathname( __FILE__ ).dirname.relative_path_from( Pathname.pwd )
@@ -69,23 +70,31 @@ task :pry do |task|
   run *cmd
 end
 
-#namespace :console do
-#  CONSOLE_CMD = ['irb', "-r './lib/nmatrix.rb'"]
-#  desc "Run console under GDB."
-#  task :gdb => [ :compile ] do |task|
-#          cmd = [ 'gdb' ] + GDB_OPTIONS
-#          cmd += [ '--args' ]
-#          cmd += CONSOLE_CMD
-#          run( *cmd )
-#  end
-#
-#  desc "Run console under Valgrind."
-#  task :valgrind => [ :compile ] do |task|
-#          cmd = [ 'valgrind' ] + VALGRIND_OPTIONS
-#          cmd += CONSOLE_CMD
-#          run( *cmd )
-#  end
-#end
+namespace :pry do
+  task :valgrind => [ :compile ] do |task|
+    cmd  = [ 'valgrind' ] + VALGRIND_OPTIONS
+    cmd += ['ruby', '-Ilib:ext', "-r './lib/nmatrix.rb'", "-r 'pry'", "-e 'binding.pry'"]
+    run *cmd
+  end
+end
+
+namespace :console do
+  CONSOLE_CMD = ['irb', "-r './lib/nmatrix.rb'"]
+  desc "Run console under GDB."
+  task :gdb => [ :compile ] do |task|
+          cmd = [ 'gdb' ] + GDB_OPTIONS
+          cmd += [ '--args' ]
+          cmd += CONSOLE_CMD
+          run( *cmd )
+  end
+
+  desc "Run console under Valgrind."
+  task :valgrind => [ :compile ] do |task|
+          cmd = [ 'valgrind' ] + VALGRIND_OPTIONS
+          cmd += CONSOLE_CMD
+          run( *cmd )
+  end
+end
 
 task :default => :spec
 
@@ -98,7 +107,7 @@ namespace :spec do
   # spurious (and eminently ignorable) warnings from the ruby
   # interpreter
 
-  RSPEC_CMD = [ 'ruby', '-S', 'rspec', '-Ilib:ext', SPECDIR ]
+  RSPEC_CMD = [ 'ruby', '-S', 'rspec', '-Ilib:ext', "#{SPECDIR}/nmatrix_spec.rb #{SPECDIR}" ]
 
   #desc "Run the spec for generator.rb"
   #task :generator do |task|
@@ -131,6 +140,7 @@ end
 
 
 LEAKCHECK_CMD = [ 'ruby', '-Ilib:ext', "#{SPECDIR}/leakcheck.rb" ]
+
 
 desc "Run leakcheck script."
 task :leakcheck => [ :compile ] do |task|

@@ -83,6 +83,8 @@ namespace nm {
       break;
     case T_FLOAT:
     case T_RATIONAL:
+    case T_FIXNUM:
+    case T_BIGNUM:
       r = NUM2DBL(other.rval);
       i = 0.0;
       break;
@@ -91,14 +93,16 @@ namespace nm {
     }
   }
 
+
   template <typename Type>
   Rational<Type>::Rational(const RubyObject& other) {
     switch (TYPE(other.rval)) {
     case T_RATIONAL:
-      n = NUM2LONG(rb_funcall(this->rval, rb_intern("numerator"), 0));
-      d = NUM2LONG(rb_funcall(this->rval, rb_intern("denominator"), 0));
+      n = NUM2LONG(rb_funcall(other.rval, rb_intern("numerator"), 0));
+      d = NUM2LONG(rb_funcall(other.rval, rb_intern("denominator"), 0));
       break;
     case T_FIXNUM:
+    case T_BIGNUM:
       n = NUM2LONG(other.rval);
       d = 1;
       break;
@@ -246,7 +250,7 @@ void rubyval_to_cval(VALUE val, nm::dtype_t dtype, void* loc) {
 			break;
 
 	  default:
-	    rb_raise(rb_eTypeError, "Attempting a bad conversion from a Ruby value.");
+	    rb_raise(rb_eTypeError, "Attempting a bad conversion.");
 	    break;
 	}
 }
@@ -326,6 +330,7 @@ nm::RubyObject rubyobj_from_cval_by_itype(void* val, nm::itype_t itype) {
 	return Qnil;
 }
 
+
 /*
  * Allocate and return a piece of data of the correct dtype, converted from a
  * given RubyObject.
@@ -337,6 +342,15 @@ void* rubyobj_to_cval(VALUE val, nm::dtype_t dtype) {
   rubyval_to_cval(val, dtype, ret_val);
 
   return ret_val;
+}
+
+void nm_init_data() {
+    nm::RubyObject obj(INT2FIX(1));
+    nm::Rational32 x(obj);
+    nm::Rational64 y(obj);
+    nm::Rational128 z(obj);
+    nm::Complex64 a(obj);
+    nm::Complex128 b(obj);
 }
 
 

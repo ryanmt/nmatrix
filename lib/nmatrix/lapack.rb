@@ -122,38 +122,32 @@ class NMatrix
 
       #
       # call-seq:
-      #     svd(matrix, type)
+      #     gesvd(matrix, type)
       # 
       #
       # * *Arguments* :
-      #   - +matrix+ -> matrix for which to compute the singular values
-      #   - +type+ -> :both, :left, :right, :none , or :arrays signifying which, if any, of the computed matrices are desired.
+      #   - +matrix+ -> matrix for which to compute the singular values ##TODO make this a self
+      #   - +type+ -> :all_values, :both, :left, :right, :left_matrix, :right_matrix, :overwrite_right, :overwrite_left, :none , or signifying what combination of singular values and matrices are desired in your output.
       # * *Returns* :
       #   - Array with the result values in an array
       # * *Raises* :
       #   - +ArgumentError+ -> Expected dense NMatrix as first argument.
       #
-      def svd(matrix, type = :both)
+      def gesvd(matrix, type = :both)
         raise ArgumentError, 'Expected dense NMatrix as first argument.' unless matrix.is_a?(NMatrix) and matrix.stype == :dense
         #define jobu, jobvt
-        jobu, jobvt = 'N', 'N'
+        jobu, jobvt = :none, :none
         case type
         when :both
-         jobu, jobvt = 'A', 'A'
+         jobu, jobvt = :all, :all
         when :arrays
-          jobu, jobvt = 'S', 'S'
+          jobu, jobvt = :return, :return
         when :left
-          jobu = 'S'
+          jobu = :return
         when :right
-          jobvt = 'S'
+          jobvt = :return
         end
         
-        if false # gesdd is for large matrices, but I'm not sure what size that should be... 
-          #        ::NMatrix::LAPACK.clapack_gesdd(:row, 
-        else
-          #::NMatrix::LAPACK.clapack_gesvd(:row,
-        end
-
         # Build up the u and vt matrices
         m, n = matrix.shape
         dtype = matrix.dtype
@@ -161,11 +155,24 @@ class NMatrix
         u_matrix = NMatrix.new([m,m], dtype)
         v_matrix = NMatrix.new([n,n], dtype)
         # test this
-        s = gesvd(jobu, jobvt, matrix, s_matrix, u_matrix, v_matrix)
+        s = gesvd(type, matrix, s_matrix, u_matrix, v_matrix)
 
         # what should this return?
         [s_matrix, u_matrix, v_matrix]
       end # #svd
+
+      #     laswp(matrix, ipiv) -> NMatrix
+      #
+      # Permute the columns of a matrix (in-place) according to the Array +ipiv+.
+      #
+      def laswp(matrix, ipiv)
+        raise(ArgumentError, "expected NMatrix for argument 0") unless matrix.is_a?(NMatrix)
+        raise(StorageTypeError, "LAPACK functions only work on :dense NMatrix instances") unless matrix.stype == :dense
+        raise(ArgumentError, "expected Array ipiv to have no more entries than NMatrix a has columns") if ipiv.size > matrix.shape[1]
+
+        clapack_laswp(matrix.shape[0], matrix, matrix.shape[1], 0, ipiv.size-1, ipiv, 1)
+      end
+
     end
   end
 end

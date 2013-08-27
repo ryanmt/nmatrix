@@ -35,9 +35,11 @@
  * Project Includes
  */
 // #include "types.h"
-#include "util/math.h"
-
 #include "data/data.h"
+#include "math/long_dtype.h"
+#include "math/gemm.h"
+#include "math/gemv.h"
+#include "math/math.h"
 #include "common.h"
 #include "dense.h"
 
@@ -72,6 +74,30 @@ namespace nm { namespace dense_storage {
 
   template <typename DType>
   bool is_symmetric(const DENSE_STORAGE* mat, int lda);
+
+
+  /*
+   * Recursive slicing for N-dimensional matrix.
+   */
+  template <typename LDType, typename RDType>
+  static void slice_copy(DENSE_STORAGE *dest, const DENSE_STORAGE *src, size_t* lengths, size_t pdest, size_t psrc, size_t n) {
+    if (src->dim - n > 1) {
+      for (size_t i = 0; i < lengths[n]; ++i) {
+        slice_copy<LDType,RDType>(dest, src, lengths,
+                   pdest + dest->stride[n]*i,
+                   psrc + src->stride[n]*i,
+                   n + 1);
+      }
+    } else {
+      for (size_t p = 0; p < dest->shape[n]; ++p) {
+        reinterpret_cast<LDType*>(dest->elements)[p+pdest] = reinterpret_cast<RDType*>(src->elements)[p+psrc];
+      }
+      /*memcpy((char*)dest->elements + pdest*DTYPE_SIZES[dest->dtype],
+          (char*)src->elements + psrc*DTYPE_SIZES[src->dtype],
+          dest->shape[n]*DTYPE_SIZES[dest->dtype]); */
+    }
+
+  }
 
 }} // end of namespace nm::dense_storage
 
@@ -163,12 +189,12 @@ void nm_dense_storage_delete(STORAGE* s) {
   if (s) {
     DENSE_STORAGE* storage = (DENSE_STORAGE*)s;
     if(storage->count-- == 1) {
-      free(storage->shape);
-      free(storage->offset);
-      free(storage->stride);
+      xfree(storage->shape);
+      xfree(storage->offset);
+      xfree(storage->stride);
       if (storage->elements != NULL) // happens with dummy objects
-        free(storage->elements);
-      free(storage);
+        xfree(storage->elements);
+      xfree(storage);
     }
   }
 }
@@ -181,9 +207,9 @@ void nm_dense_storage_delete_ref(STORAGE* s) {
   if (s) {
     DENSE_STORAGE* storage = (DENSE_STORAGE*)s;
     nm_dense_storage_delete( reinterpret_cast<STORAGE*>(storage->src) );
-    free(storage->shape);
-    free(storage->offset);
-    free(storage);
+    xfree(storage->shape);
+    xfree(storage->offset);
+    xfree(storage);
   }
 }
 
@@ -368,23 +394,32 @@ VALUE nm_dense_each(VALUE nmatrix) {
 
 
 /*
+ * Non-templated version of nm::dense_storage::slice_copy
+ */
+static void slice_copy(DENSE_STORAGE *dest, const DENSE_STORAGE *src, size_t* lengths, size_t pdest, size_t psrc, size_t n) {
+  NAMED_LR_DTYPE_TEMPLATE_TABLE(slice_copy_table, nm::dense_storage::slice_copy, void, DENSE_STORAGE*, const DENSE_STORAGE*, size_t*, size_t, size_t, size_t)
+
+  slice_copy_table[dest->dtype][src->dtype](dest, src, lengths, pdest, psrc, n);
+}
+
+
+/*
  * Get a slice or one element, using copying.
  *
  * FIXME: Template the first condition.
  */
 void* nm_dense_storage_get(STORAGE* storage, SLICE* slice) {
   DENSE_STORAGE* s = (DENSE_STORAGE*)storage;
-  DENSE_STORAGE* ns;
 
   if (slice->single)
     return (char*)(s->elements) + nm_dense_storage_pos(s, slice->coords) * DTYPE_SIZES[s->dtype];
-  else { // Make references
+  else {
     size_t *shape      = ALLOC_N(size_t, s->dim);
     for (size_t i = 0; i < s->dim; ++i) {
       shape[i]  = slice->lengths[i];
     }
 
-    ns = nm_dense_storage_create(s->dtype, shape, s->dim, NULL, 0);
+    DENSE_STORAGE* ns = nm_dense_storage_create(s->dtype, shape, s->dim, NULL, 0);
 
     slice_copy(ns,
         reinterpret_cast<const DENSE_STORAGE*>(s->src),
@@ -392,6 +427,7 @@ void* nm_dense_storage_get(STORAGE* storage, SLICE* slice) {
         0,
         nm_dense_storage_pos(s, slice->coords),
         0);
+
     return ns;
   }
 }
@@ -431,12 +467,45 @@ void* nm_dense_storage_ref(STORAGE* storage, SLICE* slice) {
 
 
 /*
- * Does not free passed-in value! Different from list_storage_insert.
+ * Recursive function, sets multiple values in a matrix from a single source value. Same basic pattern as slice_copy.
  */
-void nm_dense_storage_set(STORAGE* storage, SLICE* slice, void* val) {
-  DENSE_STORAGE* s = (DENSE_STORAGE*)storage;
-  memcpy((char*)(s->elements) + nm_dense_storage_pos(s, slice->coords) * DTYPE_SIZES[s->dtype], val, DTYPE_SIZES[s->dtype]);
+static void slice_set_single(DENSE_STORAGE* dest, void* src, size_t* lengths, size_t pdest, size_t n) {
+  if (dest->dim - n > 1) {
+    for (size_t i = 0; i < lengths[n]; ++i) {
+      slice_set_single(dest, src, lengths, pdest + dest->stride[n] * i, n + 1);
+    }
+  } else {
+    for (size_t p = 0; p < lengths[n]; ++p) {
+      memcpy((char*)(dest->elements) + (p + pdest) * DTYPE_SIZES[dest->dtype], src, DTYPE_SIZES[dest->dtype]);
+    }
+  }
 }
+
+
+/*
+ * Set a value or values in a dense matrix. Requires that right be either a single value or an NMatrix (ref or real).
+ */
+void nm_dense_storage_set(VALUE left, SLICE* slice, VALUE right) {
+  DENSE_STORAGE* s = NM_STORAGE_DENSE(left);
+
+  if (TYPE(right) == T_DATA) {
+    if (RDATA(right)->dfree == (RUBY_DATA_FUNC)nm_delete || RDATA(right)->dfree == (RUBY_DATA_FUNC)nm_delete_ref) {
+      rb_raise(rb_eNotImpError, "this type of slicing not yet supported");
+    } else {
+      rb_raise(rb_eTypeError, "unrecognized type for slice assignment");
+    }
+  } else {
+    void* val = rubyobj_to_cval(right, s->dtype);
+    if (slice->single)
+      memcpy((char*)(s->elements) + nm_dense_storage_pos(s, slice->coords) * DTYPE_SIZES[s->dtype], val, DTYPE_SIZES[s->dtype]);
+    else
+      slice_set_single(s, val, slice->lengths, nm_dense_storage_pos(s, slice->coords), 0);
+
+    xfree(val);
+  }
+
+}
+
 
 ///////////
 // Tests //
@@ -552,24 +621,6 @@ static size_t* stride(size_t* shape, size_t dim) {
   return stride;
 }
 
-/*
- * Recursive slicing for N-dimensional matrix.
- */
-static void slice_copy(DENSE_STORAGE *dest, const DENSE_STORAGE *src, size_t* lengths, size_t pdest, size_t psrc, size_t n) {
-  if (src->dim - n > 1) {
-    for (size_t i = 0; i < lengths[n]; ++i) {
-      slice_copy(dest, src, lengths,
-                                    pdest + dest->stride[n]*i,
-                                    psrc + src->stride[n]*i,
-                                    n + 1);
-    }
-  } else {
-    memcpy((char*)dest->elements + pdest*DTYPE_SIZES[dest->dtype],
-        (char*)src->elements + psrc*DTYPE_SIZES[src->dtype],
-        dest->shape[n]*DTYPE_SIZES[dest->dtype]);
-  }
-
-}
 
 /////////////////////////
 // Copying and Casting //
@@ -578,7 +629,7 @@ static void slice_copy(DENSE_STORAGE *dest, const DENSE_STORAGE *src, size_t* le
 /*
  * Copy dense storage, changing dtype if necessary.
  */
-STORAGE* nm_dense_storage_cast_copy(const STORAGE* rhs, nm::dtype_t new_dtype) {
+STORAGE* nm_dense_storage_cast_copy(const STORAGE* rhs, nm::dtype_t new_dtype, void* dummy) {
 	NAMED_LR_DTYPE_TEMPLATE_TABLE(ttable, nm::dense_storage::cast_copy, DENSE_STORAGE*, const DENSE_STORAGE* rhs, nm::dtype_t new_dtype);
 
   if (!ttable[new_dtype][rhs->dtype]) {
@@ -694,22 +745,20 @@ DENSE_STORAGE* cast_copy(const DENSE_STORAGE* rhs, dtype_t new_dtype) {
 
   DENSE_STORAGE* lhs			= nm_dense_storage_create(new_dtype, shape, rhs->dim, NULL, 0);
 
-  RDType*	rhs_els         = reinterpret_cast<RDType*>(rhs->elements);
-  LDType* lhs_els	        = reinterpret_cast<LDType*>(lhs->elements);
-
 	// Ensure that allocation worked before copying.
   if (lhs && count) {
     if (rhs->src != rhs) { // Make a copy of a ref to a matrix.
+      size_t* offset      = ALLOCA_N(size_t, rhs->dim);
+      memset(offset, 0, sizeof(size_t) * rhs->dim);
 
-      DENSE_STORAGE* tmp = nm_dense_storage_copy(rhs);
-
-      RDType* tmp_els    = reinterpret_cast<RDType*>(tmp->elements);
-      while (count-- > 0)   {
-        lhs_els[count] = tmp_els[count];
-      }
-      nm_dense_storage_delete(tmp);
+      slice_copy(lhs, reinterpret_cast<const DENSE_STORAGE*>(rhs->src),
+                 rhs->shape, 0,
+                 nm_dense_storage_pos(rhs, offset), 0);
 
     } else {              // Make a regular copy.
+      RDType*	rhs_els         = reinterpret_cast<RDType*>(rhs->elements);
+      LDType* lhs_els	        = reinterpret_cast<LDType*>(lhs->elements);
+
     	while (count-- > 0)     		lhs_els[count] = rhs_els[count];
     }
   }

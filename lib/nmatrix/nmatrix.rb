@@ -23,15 +23,16 @@
 #
 # == nmatrix.rb
 #
-# This file adds a few additional pieces of functionality (e.g., inspect,
-# pretty_print).
+# This file contains those core functionalities which can be
+# implemented efficiently (or much more easily) in Ruby (e.g.,
+# inspect, pretty_print, element-wise operations).
 #++
 
-require_relative './shortcuts.rb'
 require_relative './lapack.rb'
 require_relative './yale_functions.rb'
 
 class NMatrix
+
   # Read and write extensions for NMatrix. These are only loaded when needed.
   #
   module IO
@@ -51,36 +52,103 @@ class NMatrix
     autoload :Market, 'nmatrix/io/market'
   end
 
-  # TODO: Make this actually pretty.
-  def pretty_print(q = nil) #:nodoc:
-    if dim != 2 || (dim == 2 && shape[1] > 10) # FIXME: Come up with a better way of restricting the display
-      puts self.inspect
-    else
-
-      arr = (0...shape[0]).map do |i|
-        ary = []
-        (0...shape[1]).each do |j|
-          o = begin
-                self[i, j]
-              rescue ArgumentError
-                nil
-              end
-          ary << (o.nil? ? 'nil' : o)
-        end
-        ary.inspect
-      end
-
-      if q.nil?
-        puts "[" + arr.join("\n") + "]"
-      else
-        q.group(1, "", "\n") do
-          q.seplist(arr, lambda { q.text "  " }, :each)  { |v| q.text v.to_s }
-        end
-      end
-
+  class << self
+    #
+    # call-seq:
+    #     load_file(path) -> Mat5Reader
+    #
+    # * *Arguments* :
+    #   - +path+ -> The path to a version 5 .mat file.
+    # * *Returns* :
+    #   - A Mat5Reader object.
+    #
+    def load_file(file_path)
+      NMatrix::IO::Mat5Reader.new(File.open(file_path, 'rb')).to_ruby
     end
   end
-  alias :pp :pretty_print
+
+  # TODO: Make this actually pretty.
+  def pretty_print(q) #:nodoc:
+    if self.dim > 3 || self.dim == 1
+      self.to_a.pretty_print(q)
+    else
+      # iterate through the whole matrix and find the longest number
+      longest = Array.new(self.shape[1], 0)
+      self.each_column.with_index do |col, j|
+        col.each do |elem|
+          elem_len   = elem.to_s.size
+          longest[j] = elem_len if longest[j] < elem_len
+        end
+      end
+
+      if self.dim == 3
+        q.group(0, "\n{ layers:", "}") do
+          self.each_layer.with_index do |layer,k|
+            q.group(0, "\n  [\n", "  ]\n") do
+              layer.each_row.with_index do |row,i|
+                q.group(0, "    [", "]\n") do
+                  q.seplist(self[i,0...self.shape[1],k].to_flat_array, lambda { q.text ", "}, :each_with_index) { |v,j| q.text v.to_s.rjust(longest[j]) }
+                end
+              end
+            end
+          end
+        end
+      else # dim 2
+        q.group(0, "\n[\n", "]") do
+          self.each_row.with_index do |row,i|
+            q.group(1, "  [", "]") do
+              q.seplist(self.dim > 2 ? row.to_a[0] : row.to_a, lambda { q.text ", " }, :each_with_index) { |v,j| q.text v.to_s.rjust(longest[j]) }
+            end
+            q.breakable
+          end
+        end
+      end
+    end
+  end
+  #alias :pp :pretty_print
+
+
+
+  #
+  # call-seq:
+  #     cast(stype, dtype, default) -> NMatrix
+  #     cast(stype, dtype) -> NMatrix
+  #     cast(stype) -> NMatrix
+  #     cast(options) -> NMatrix
+  #
+  # This is a user-friendly helper for calling #cast_full. The easiest way to call this function is using an
+  # options hash, e.g.,
+  #
+  #     n.cast(:stype => :yale, :dtype => :int64, :default => false)
+  #
+  # For list and yale, :default sets the "default value" or "init" of the matrix. List allows a bit more freedom
+  # since non-zeros are permitted. For yale, unpredictable behavior may result if the value is not false, nil, or
+  # some version of 0. Dense discards :default.
+  #
+  # dtype and stype are inferred from the matrix upon which #cast is called -- so you only really need to provide
+  # one. You can actually call this function with no arguments, in which case it functions like #clone.
+  #
+  # If your dtype is :object and you are converting from :dense to a sparse type, it is recommended that you
+  # provide a :default, as 0 may behave differently from its Float, Rational, or Complex equivalent. If no option
+  # is given, Fixnum 0 will be used.
+  def cast(*params)
+    if (params.size > 0 && params[0].is_a?(Hash))
+      opts = {
+          :stype => self.stype,
+          :dtype => self.dtype,
+          :default => self.stype == :dense ? 0 : self.default_value
+      }.merge(params[0])
+
+      self.cast_full(opts[:stype], opts[:dtype], opts[:default])
+    else
+      params << self.stype if params.size == 0
+      params << self.dtype if params.size == 1
+      params << (self.stype == :dense ? 0 : self.default_value) if params.size == 2
+
+      self.cast_full(*params)
+    end
+
+  end
 
   #
   # call-seq:
@@ -130,158 +198,6 @@ class NMatrix
   end
   alias :to_h :to_hash
 
-  #
-  # call-seq:
-  #     invert! -> NMatrix
-  #
-  # Use LAPACK to calculate the inverse of the matrix (in-place). Only works on
-  # dense matrices.
-  #
-  # Note: If you don't have LAPACK, e.g., on a Mac, this may not work yet.
-  #
-  def invert!
-    # Get the pivot array; factor the matrix
-    pivot = self.getrf!
-
-    # Now calculate the inverse using the pivot array
-    NMatrix::LAPACK::clapack_getri(:row, self.shape[0], self, self.shape[0], pivot)
-
-    self
-  end
-
-  #
-  # call-seq:
-  #     invert -> NMatrix
-  #
-  # Make a copy of the matrix, then invert it (requires LAPACK).
-  #
-  # * *Returns* :
-  #   - A dense NMatrix.
-  #
-  def invert
-    self.cast(:dense, self.dtype).invert!
-  end
-  alias :inverse :invert
-
-  #
-  # call-seq:
-  #     getrf! -> NMatrix
-  #
-  # LU factorization of a general M-by-N matrix +A+ using partial pivoting with
-  # row interchanges. Only works in dense matrices.
-  #
-  # * *Returns* :
-  #   - The IPIV vector. The L and U matrices are stored in A.
-  # * *Raises* :
-  #   - +StorageTypeError+ -> ATLAS functions only work on dense matrices.
-  #
-  def getrf!
-    raise(StorageTypeError, "ATLAS functions only work on dense matrices") unless self.stype == :dense
-    NMatrix::LAPACK::clapack_getrf(:row, self.shape[0], self.shape[1], self, self.shape[0])
-  end
-
-  #
-  # call-seq:
-  #     det -> determinant
-  #
-  # Calculate the determinant by way of LU decomposition. This is accomplished
-  # using clapack_getrf, and then by summing the diagonal elements. There is a
-  # risk of underflow/overflow.
-  #
-  # There are probably also more efficient ways to calculate the determinant.
-  # This method requires making a copy of the matrix, since clapack_getrf
-  # modifies its input.
-  #
-  # For smaller matrices, you may be able to use +#det_exact+.
-  #
-  # This function is guaranteed to return the same type of data in the matrix
-  # upon which it is called.
-  # In other words, if you call it on a rational matrix, you'll get a rational
-  # number back.
-  #
-  # Integer matrices are converted to rational matrices for the purposes of
-  # performing the calculation, as xGETRF can't work on integer matrices.
-  #
-  # * *Returns* :
-  #   - The determinant of the matrix. It's the same type as the matrix's dtype.
-  # * *Raises* :
-  #   - +NotImplementedError+ -> Must be used in 2D matrices.
-  #
-  def det
-    raise(NotImplementedError, "determinant can be calculated only for 2D matrices") unless self.dim == 2
-
-    # Cast to a dtype for which getrf is implemented
-    new_dtype = [:byte,:int8,:int16,:int32,:int64].include?(self.dtype) ? :rational128 : self.dtype
-    copy = self.cast(:dense, new_dtype)
-
-    # Need to know the number of permutations. We'll add up the diagonals of
-    # the factorized matrix.
-    pivot = copy.getrf!
-
-    prod = pivot.size % 2 == 1 ? -1 : 1 # odd permutations => negative
-    [shape[0],shape[1]].min.times do |i|
-      prod *= copy[i,i]
-    end
-
-    # Convert back to an integer if necessary
-    new_dtype != self.dtype ? prod.to_i : prod
-  end
-
-  #
-  # call-seq:
-  #     complex_conjugate -> NMatrix
-  #     complex_conjugate(new_stype) -> NMatrix
-  #
-  # Get the complex conjugate of this matrix. See also complex_conjugate! for
-  # an in-place operation (provided the dtype is already +:complex64+ or
-  # +:complex128+).
-  #
-  # Doesn't work on list matrices, but you can optionally pass in the stype you
-  # want to cast to if you're dealing with a list matrix.
-  #
-  # * *Arguments* :
-  #   - +new_stype+ -> stype for the new matrix.
-  # * *Returns* :
-  #   - If the original NMatrix isn't complex, the result is a +:complex128+ NMatrix. Otherwise, it's the original dtype.
-  #
-  def complex_conjugate(new_stype = self.stype)
-    self.cast(new_stype, NMatrix::upcast(dtype, :complex64)).complex_conjugate!
-  end
-
-  #
-  # call-seq:
-  #     conjugate_transpose -> NMatrix
-  #
-  # Calculate the conjugate transpose of a matrix. If your dtype is already
-  # complex, this should only require one copy (for the transpose).
-  #
-  # * *Returns* :
-  #   - The conjugate transpose of the matrix as a copy.
-  #
-  def conjugate_transpose
-    self.transpose.complex_conjugate!
-  end
-
-  #
-  # call-seq:
-  #     hermitian? -> Boolean
-  #
-  # A hermitian matrix is a complex square matrix that is equal to its
-  # conjugate transpose. (http://en.wikipedia.org/wiki/Hermitian_matrix)
-  #
-  # * *Returns* :
-  #   - True if +self+ is a hermitian matrix, nil otherwise.
-  #
-  def hermitian?
-    return false if self.dim != 2 or self.shape[0] != self.shape[1]
-
-    if [:complex64, :complex128].include?(self.dtype)
-      # TODO: Write much faster Hermitian test in C
-      self.eql?(self.conjugate_transpose)
-    else
-      symmetric?
-    end
-  end
 
   def inspect #:nodoc:
     original_inspect = super()
@@ -297,97 +213,6 @@ class NMatrix
 
 
   ##
-  # call-seq:
-  #   each_along_dim() -> Enumerator
-  #   each_along_dim(dimen) -> Enumerator
-  #   each_along_dim() { |elem| block } -> NMatrix
-  #   each_along_dim(dimen) { |elem| block } -> NMatrix
-  #
-  # Successively yields submatrices at each coordinate along a specified
-  # dimension.  Each submatrix will have the same number of dimensions as
-  # the matrix being iterated, but with the specified dimension's size 
-  # equal to 1.
-  #
-  # @param [Integer] dimen the dimension being iterated over.
-  #
-  def each_along_dim(dimen=0)
-    return enum_for(:each_along_dim, dimen) unless block_given?
-    dims = shape
-    shape.each_index { |i| dims[i] = 0...(shape[i]) unless i == dimen }
-    0.upto(shape[dimen]-1) do |i|
-      dims[dimen] = i
-      yield self[*dims]
-    end
-  end
-
-
-  ##
-  # call-seq:
-  #   reduce_along_dim() -> Enumerator
-  #   reduce_along_dim(dimen) -> Enumerator
-  #   reduce_along_dim(dimen, initial) -> Enumerator
-  #   reduce_along_dim(dimen, initial, dtype) -> Enumerator
-  #   reduce_along_dim() { |elem| block } -> NMatrix
-  #   reduce_along_dim(dimen) { |elem| block } -> NMatrix
-  #   reduce_along_dim(dimen, initial) { |elem| block } -> NMatrix
-  #   reduce_along_dim(dimen, initial, dtype) { |elem| block } -> NMatrix
-  #
-  # Reduces an NMatrix using a supplied block over a specified dimension.
-  # The block should behave the same way as for Enumerable#reduce.
-  #
-  # @param [Integer] dimen the dimension being reduced
-  # @param [Numeric] initial the initial value for the reduction 
-  #  (i.e. the usual parameter to Enumerable#reduce).  Supply nil or do not
-  #  supply this argument to have it follow the usual Enumerable#reduce 
-  #  behavior of using the first element as the initial value.
-  # @param [Symbol] dtype if non-nil/false, forces the accumulated result to have this dtype
-  # @return [NMatrix] an NMatrix with the same number of dimensions as the
-  #  input, but with the input dimension now having size 1.  Each element 
-  #  is the result of the reduction at that position along the specified
-  #  dimension.
-  #
-  def reduce_along_dim(dimen=0, initial=nil, dtype=nil)
-
-    if dimen > shape.size then
-      raise ArgumentError, "Requested dimension does not exist.  Requested: #{dimen}, shape: #{shape}"
-    end
-
-    return enum_for(:reduce_along_dim, dimen, initial) unless block_given?
-
-    new_shape = shape
-    new_shape[dimen] = 1
-
-    first_as_acc = false
-
-    if initial then
-      acc = NMatrix.new(new_shape, initial, dtype || self.dtype)
-    else
-      each_along_dim(dimen) do |sub_mat|
-        if sub_mat.is_a?(NMatrix) and dtype and dtype != self.dtype then
-          acc = sub_mat.cast(self.stype, dtype)
-        else
-          acc = sub_mat
-        end
-        break
-      end
-      first_as_acc = true
-    end
-
-    each_along_dim(dimen) do |sub_mat|
-      if first_as_acc then
-        first_as_acc = false
-        next
-      end
-      acc = (yield acc, sub_mat)
-    end
-
-    acc
-
-  end
-
-  alias_method :inject_along_dim, :reduce_along_dim
-
-  ##
   # call-seq: 
   #   integer_dtype?() -> Boolean
   #
@@ -397,247 +222,210 @@ class NMatrix
     [:byte, :int8, :int16, :int32, :int64].include?(self.dtype)
   end
 
-  ##
+
+  #
   # call-seq:
-  #   mean() -> NMatrix
-  #   mean(dimen) -> NMatrix
-  #
-  # Calculates the mean along the specified dimension.
-  #
-  # This will force integer types to float64 dtype.
-  #
-  # @see #reduce_along_dim
-  #
-  def mean(dimen=0)
-    reduce_dtype = nil
-    if integer_dtype? then
-      reduce_dtype = :float64
-    end
-    reduce_along_dim(dimen, 0.0, reduce_dtype) do |mean, sub_mat|
-      mean + sub_mat/shape[dimen]
-    end
-  end
-
-  ##
-  # call-seq:
-  #   sum() -> NMatrix
-  #   sum(dimen) -> NMatrix
-  #
-  # Calculates the sum along the specified dimension.
-  #
-  # @see #reduce_along_dim
-  def sum(dimen=0)
-    reduce_along_dim(dimen, 0.0) do |sum, sub_mat|
-      sum + sub_mat
-    end
-  end
-
-
-  ##
-  # call-seq:
-  #   min() -> NMatrix
-  #   min(dimen) -> NMatrix
-  #
-  # Calculates the minimum along the specified dimension.
-  #
-  # @see #reduce_along_dim
-  #
-  def min(dimen=0)
-    reduce_along_dim(dimen) do |min, sub_mat|
-      if min.is_a? NMatrix then 
-        min * (min <= sub_mat).cast(self.stype, self.dtype) + ((min)*0.0 + (min > sub_mat).cast(self.stype, self.dtype)) * sub_mat
-      else
-        min <= sub_mat ? min : sub_mat
-      end
-    end
-  end
-
-  ##
-  # call-seq:
-  #   max() -> NMatrix
-  #   max(dimen) -> NMatrix
-  #
-  # Calculates the maximum along the specified dimension.
-  #
-  # @see #reduce_along_dim
-  #
-  def max(dimen=0)
-    reduce_along_dim(dimen) do |max, sub_mat|
-      if max.is_a? NMatrix then
-        max * (max >= sub_mat).cast(self.stype, self.dtype) + ((max)*0.0 + (max < sub_mat).cast(self.stype, self.dtype)) * sub_mat
-      else
-        max >= sub_mat ? max : sub_mat
-      end
-    end
-  end
-
-
-  ##
-  # call-seq:
-  #   variance() -> NMatrix
-  #   variance(dimen) -> NMatrix
-  #
-  # Calculates the sample variance along the specified dimension.
-  #
-  # This will force integer types to float64 dtype.
-  #
-  # @see #reduce_along_dim
-  #
-  def variance(dimen=0)
-    reduce_dtype = nil
-    if integer_dtype? then
-      reduce_dtype = :float64
-    end
-    m = mean(dimen)
-    reduce_along_dim(dimen, 0.0, reduce_dtype) do |var, sub_mat|
-      var + (m - sub_mat)*(m - sub_mat)/(shape[dimen]-1)
-    end
-  end
-
-  ##
-  # call-seq:
-  #   std() -> NMatrix
-  #   std(dimen) -> NMatrix
-  #
-  #
-  # Calculates the sample standard deviation along the specified dimension.
-  #
-  # This will force integer types to float64 dtype.
-  #
-  # @see #reduce_along_dim
-  #
-  def std(dimen=0)
-    variance(dimen).map! { |e| Math.sqrt(e) }
-  end
-
-  ##
-  # call-seq:
-  #   to_f -> Float
+  #     to_f -> Float
   #
   # Converts an nmatrix with a single element (but any number of dimensions)
   #  to a float.
   #
   # Raises an IndexError if the matrix does not have just a single element.
   #
-  # FIXME: Does this actually happen? Matrices should not have just one element.
   def to_f
     raise IndexError, 'to_f only valid for matrices with a single element' unless shape.all? { |e| e == 1 }
     self[*Array.new(shape.size, 0)]
   end
 
-  ##
+  #
   # call-seq:
-  #   each -> Enumerator
+  #     to_flat_array -> Array
+  #     to_flat_a -> Array
   #
-  # Enumerate through the matrix. @see Enumerable#each
+  # Converts an NMatrix to a one-dimensional Ruby Array.
   #
-  # For dense, this actually calls a specialized each iterator (in C). For yale and list, it relies upon
-  # #each_with_indices (which is about as fast as reasonably possible for C code).
-  def each &block
-    if self.stype == :dense
-      self.__dense_each__(&block)
+  def to_flat_array
+    ary = Array.new(self.size)
+    self.each.with_index { |v,i| ary[i] = v }
+    ary
+  end
+  alias :to_flat_a :to_flat_array
+
+  #
+  # call-seq:
+  #     size -> Fixnum
+  #
+  # Returns the total size of the NMatrix based on its shape.
+  #
+  def size
+    s = self.shape
+    (0...self.dimensions).inject(1) { |x,i| x * s[i] }
+  end
+
+
+  def to_s #:nodoc:
+    self.to_flat_array.to_s
+  end
+
+  #
+  # call-seq:
+  #     nvector? -> true or false
+  #
+  # Shortcut function for determining whether the effective dimension is less than the dimension.
+  # Useful when we take slices of n-dimensional matrices where n > 2.
+  #
+  def nvector?
+    self.effective_dim < self.dim
+  end
+
+  #
+  # call-seq:
+  #     vector? -> true or false
+  #
+  # Shortcut function for determining whether the effective dimension is 1. See also #nvector?
+  #
+  def vector?
+    self.effective_dim == 1
+  end
+
+
+  #
+  # call-seq:
+  #     to_a -> Array
+  #
+  # Converts an NMatrix to an array of arrays, or an NMatrix of effective dimension 1 to an array.
+  #
+  # Does not yet work for dimensions > 2
+  def to_a(dimen=nil)
+    if self.dim == 2
+
+      return self.to_flat_a if self.shape[0] == 1
+
+      ary = []
+      begin
+        self.each_row do |row|
+          ary << row.to_flat_a
+        end
+      #rescue NotImplementedError # Oops. Try copying instead
+      #  self.each_row(:copy) do |row|
+      #    ary << row.to_a.flatten
+      #  end
+      end
+      ary
     else
-      self.each_with_indices(&block)
+      to_a_rec(0)
     end
   end
 
-  ##
+
+  #
   # call-seq:
-  #   map -> Enumerator
-  #   map { |elem| block } -> NMatrix
+  #     rank(dimension, row_or_column_number) -> NMatrix
+  #     rank(dimension, row_or_column_number, :reference) -> NMatrix reference slice
   #
-  # @see Enumerable#map
+  # Returns the rank (e.g., row, column, or layer) specified, using slicing by copy as default.
   #
-  def map(&bl)
-    return enum_for(:map) unless block_given?
-    cp = self.dup
-    cp.map! &bl
-    cp
+  # See @row (dimension = 0), @column (dimension = 1)
+  def rank(shape_idx, rank_idx, meth = :copy)
+
+    params = Array.new(self.dim)
+    params.each.with_index do |v,d|
+      params[d] = d == shape_idx ? rank_idx : 0...self.shape[d]
+    end
+
+    meth == :reference ? self[*params] : self.slice(*params)
   end
 
-  ##
+  #
   # call-seq:
-  #   map! -> Enumerator
-  #   map! { |elem| block } -> NMatrix
+  #     column(column_number) -> NMatrix
+  #     column(column_number, get_by) -> NMatrix
   #
-  # Maps in place.
-  # @see #map
+  # Returns the column specified. Uses slicing by copy as default.
   #
-  def map!
-    return enum_for(:map!) unless block_given?
-    self.each_stored_with_indices do |e, *i|
-      self[*i] = (yield e)
-    end
+  # * *Arguments* :
+  #   - +column_number+ -> Integer.
+  #   - +get_by+ -> Type of slicing to use, +:copy+ or +:reference+.
+  # * *Returns* :
+  #   - A NMatrix representing the requested column as a column vector.
+  #
+  # Examples:
+  #
+  #   m = NMatrix.new(2, [1, 4, 9, 14], :int32) # =>  1   4
+  #                                                   9  14
+  #
+  #   m.column(1) # =>   4
+  #                     14
+  #
+  def column(column_number, get_by = :copy)
+    rank(1, column_number, get_by)
+  end
+
+  alias :col :column
+
+  #
+  # call-seq:
+  #     row(row_number) -> NMatrix
+  #     row(row_number, get_by) -> NMatrix
+  #
+  # * *Arguments* :
+  #   - +row_number+ -> Integer.
+  #   - +get_by+ -> Type of slicing to use, +:copy+ or +:reference+.
+  # * *Returns* :
+  #   - A NMatrix representing the requested row as a row vector.
+  #
+  def row(row_number, get_by = :copy)
+    rank(0, row_number, get_by)
+  end
+
+  #
+  # call-seq:
+  #     layer(layer_number) -> NMatrix
+  #     row(layer_number, get_by) -> NMatrix
+  #
+  # * *Arguments* :
+  #   - +layer_number+ -> Integer.
+  #   - +get_by+ -> Type of slicing to use, +:copy+ or +:reference+.
+  # * *Returns* :
+  #   - A NMatrix representing the requested layer as a layer vector.
+  #
+  def layer(layer_number, get_by = :copy)
+    rank(2, layer_number, get_by)
+  end
+
+
+
+  #
+  # call-seq:
+  #     shuffle! -> ...
+  #     shuffle!(random: rng) -> ...
+  #
+  # Re-arranges the contents of an NVector.
+  #
+  # TODO: Write more efficient version for Yale, list.
+  # TODO: Generalize for more dimensions.
+  def shuffle!(*args)
+    method_missing(:shuffle!, *args) if self.effective_dim > 1
+    ary = self.to_flat_a
+    ary.shuffle!(*args)
+    ary.each.with_index { |v,idx| self[idx] = v }
     self
   end
 
 
   #
   # call-seq:
-  #     each_row -> ...
+  #     shuffle -> ...
+  #     shuffle(rng) -> ...
   #
-  # Iterate through each row, referencing it as an NVector.
-  def each_row(get_by=:reference, &block)
-    (0...self.shape[0]).each do |i|
-      yield self.row(i, get_by)
-    end
-    self
-  end
-
+  # Re-arranges the contents of an NVector.
   #
-  # call-seq:
-  #     each_column -> ...
-  #
-  # Iterate through each column, referencing it as an NVector.
-  def each_row(get_by=:reference, &block)
-    (0...self.shape[0]).each do |i|
-      yield self.row(i, get_by)
-    end
-    self
-  end
-
-
-  class << self
-    #
-    # call-seq:
-    #     load_file(path) -> Mat5Reader
-    #
-    # * *Arguments* :
-    #   - +path+ -> The path to a version 5 .mat file.
-    # * *Returns* :
-    #   - A Mat5Reader object.
-    #
-    def load_file(file_path)
-      NMatrix::IO::Mat5Reader.new(File.open(file_path, 'rb')).to_ruby
-    end
-
-    ##
-    # call-seq:
-    #   ones_like(nm) -> NMatrix
-    #
-    # Creates a new matrix of ones with the same dtype and shape as the
-    # provided matrix.
-    #
-    # @param [NMatrix] nm the nmatrix whose dtype and shape will be used
-    # @return [NMatrix] a new nmatrix filled with ones.
-    #
-    def ones_like(nm)
-      NMatrix.ones(nm.shape, nm.dtype)
-    end
-
-    ##
-    # call-seq:
-    #   zeros_like(nm) -> NMatrix
-    #
-    # Creates a new matrix of zeros with the same stype, dtype, and shape
-    # as the provided matrix.
-    #
-    # @param [NMatrix] nm the nmatrix whose stype, dtype, and shape will be used
-    # @return [NMatrix] a new nmatrix filled with zeros.
-    #
-    def zeros_like(nm)
-      NMatrix.zeros(nm.stype, nm.shape, nm.dtype)
-    end
+  # TODO: Write more efficient version for Yale, list.
+  # TODO: Generalize for more dimensions.
+  def shuffle(*args)
+    method_missing(:shuffle!, *args) if self.effective_dim > 1
+    t = self.clone
+    t.shuffle!(*args)
   end
 
 
@@ -651,53 +439,17 @@ class NMatrix
     end
   end
 
-protected
-  # Define the element-wise operations for lists. Note that the __list_map_merged_stored__ iterator returns a Ruby Object
-  # matrix, which we then cast back to the appropriate type. If you don't want that, you can redefine these functions in
-  # your own code.
-  {add: :+, sub: :-, mul: :*, div: :/, pow: :**, mod: :%}.each_pair do |ewop, op|
-    define_method("__list_elementwise_#{ewop}__") do |rhs|
-      self.__list_map_merged_stored__(rhs, nil) { |l,r| l.send(op,r) }.cast(stype, NMatrix.upcast(dtype, rhs.dtype))
-    end
-    define_method("__dense_elementwise_#{ewop}__") do |rhs|
-      self.__dense_map_pair__(rhs) { |l,r| l.send(op,r) }.cast(stype, NMatrix.upcast(dtype, rhs.dtype))
-    end
-    define_method("__yale_elementwise_#{ewop}__") do |rhs|
-      self.__yale_map_merged_stored__(rhs, nil) { |l,r| l.send(op,r) }.cast(stype, NMatrix.upcast(dtype, rhs.dtype))
-    end
-    define_method("__list_scalar_#{ewop}__") do |rhs|
-      self.__list_map_merged_stored__(rhs, nil) { |l,r| l.send(op,r) }.cast(stype, NMatrix.upcast(dtype, NMatrix.min_dtype(rhs)))
-    end
-    define_method("__yale_scalar_#{ewop}__") do |rhs|
-      self.__yale_map_stored__ { |l| l.send(op,rhs) }.cast(stype, NMatrix.upcast(dtype, NMatrix.min_dtype(rhs)))
-    end
-    define_method("__dense_scalar_#{ewop}__") do |rhs|
-      self.__dense_map__ { |l| l.send(op,rhs) }.cast(stype, NMatrix.upcast(dtype, NMatrix.min_dtype(rhs)))
+
+  def respond_to?(method) #:nodoc:
+    if [:shuffle, :shuffle!, :each_with_index].include?(method.intern) # vector-only methods
+      return vector?
+    elsif [:each_layer, :layer].include?(method.intern) # 3-or-more dimensions only
+      return dim > 2
+    else
+      super(method)
     end
   end
 
-  # Equality operators do not involve a cast. We want to get back matrices of TrueClass and FalseClass.
-  {eqeq: :==, neq: :!=, lt: :<, gt: :>, leq: :<=, geq: :>=}.each_pair do |ewop, op|
-    define_method("__list_elementwise_#{ewop}__") do |rhs|
-      self.__list_map_merged_stored__(rhs, nil) { |l,r| l.send(op,r) }
-    end
-    define_method("__dense_elementwise_#{ewop}__") do |rhs|
-      self.__dense_map_pair__(rhs) { |l,r| l.send(op,r) }
-    end
-    define_method("__yale_elementwise_#{ewop}__") do |rhs|
-      self.__yale_map_merged_stored__(rhs, nil) { |l,r| l.send(op,r) }
-    end
-
-    define_method("__list_scalar_#{ewop}__") do |rhs|
-      self.__list_map_merged_stored__(rhs, nil) { |l,r| l.send(op,r) }
-    end
-    define_method("__yale_scalar_#{ewop}__") do |rhs|
-      self.__yale_map_stored__ { |l| l.send(op,rhs) }
-    end
-    define_method("__dense_scalar_#{ewop}__") do |rhs|
-      self.__dense_map__ { |l| l.send(op,rhs) }
-    end
-  end
 
   # This is how you write an individual element-wise operation function:
   #def __list_elementwise_add__ rhs
@@ -724,4 +476,18 @@ protected
   end
 
 
+  # Helper for converting a matrix into an array of arrays recursively
+  def to_a_rec(dimen = 0) #:nodoc:
+    return self.flat_map { |v| v } if dimen == self.dim-1
+
+    ary = []
+    self.each_rank(dimen) do |sect|
+      ary << sect.to_a_rec(dimen+1)
+    end
+    ary
+  end
 end
+
+require_relative './shortcuts.rb'
+require_relative './math.rb'
+require_relative './enumerate.rb'

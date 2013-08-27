@@ -191,9 +191,9 @@
   * NMatrix::read() now raises an exception when asked to read a file 
     that does not exist
 
-=== 0.0.6 / 2013-??-??
+=== 0.0.6 / 2013-08-09
 
-* 5 major enhancements:
+* 8 major enhancements:
 
   * Refactored iteration, so that each storage type now has each of:
     #each, #each_with_indices, #each_stored_with_indices
@@ -207,12 +207,19 @@
     NMatrix#__list_elementwise_op__ and NMatrix#__list_scalar_op__
 
   * Element-wise and scalar operations that might return a true or
-    false now return Ruby matrices (for :list; still pending for
-    dense and yale)
+    false now return Ruby matrices
+
+  * Yale element-wise and scalar operations have been added
+
+  * Yale is now allowed to have a non-zero default (specifically to
+    permit true-false matrices and nil sparse bases)
+
+  * Dramatically improved NMatrix#cast to allow for hashed options
+    including a :default for list and yale casts
 
   * Dramatically improved speed of compilation
 
-* 13 minor enhancements:
+* 14 minor enhancements:
 
   * Improved documentation for exposed BLAS and LAPACK functions
 
@@ -253,7 +260,7 @@
     circa v0.0.2 (Array#min, Array#max, String#constantize,
     String#camelize, String#underscore)
 
-  * Re-enabled list storage element-wise mod (%) method
+  * Re-enabled element-wise mod (%) method
 
   * Added NMatrix::guess_dtype class method, which allows you to
     figure out what dtype (roughly) should be used for any given
@@ -261,6 +268,9 @@
 
   * String and nil objects in NMatrix cells are no longer outlawed
     (but are not supported), provided they are of the :object dtype
+
+  * NMatrix#diag shortcut for specifying sparse matrix with a user-
+    specified diagonal array (by @ryanmt)
 
 * 3 bug fixes:
 
@@ -271,5 +281,122 @@
 
   * Repaired list matrix element-wise functions
 
-  * Non-numeric initial values are now permissible for list matrices
-    (e.g., nil, true, false, etc.)
+=== 0.0.7 / 2013-08-22
+
+* 6 major enhancements:
+
+  * Eliminated NVector in favor of NMatrix objects with
+    #effective_dim smaller than #dim; added NVector-like
+    functionality to NMatrix, sometimes with #respond_to? dependent
+    upon matrix dimensions; allowed for NVector.new to continue
+    to function as before, but now returns an NMatrix instead
+
+  * Began major re-factoring of headers for math.cpp
+
+  * Added two singular value decomposition functions for dense
+    NMatrix objects, #gesvd and #gesdd, for floating point and
+    complex dtypes
+
+  * Added additional slicing shorthand, which uses hashes (e.g.,
+    n[0=>3,2] for n[0..3,2]), which may eventually allow users to use
+    n[0:3,2] notation instead (needs Ruby core patch)
+
+  * #[] and #[]= calls no longer need index on those matrix shape
+    elements which are equal to 1 (e.g., vectors)
+
+  * Yale slicing-by-reference has been added
+
+* 18 minor enhancements:
+
+  * Added user-friendly NMatrix::LAPACK::laswp method
+
+  * Added NMatrix#permute_columns! and NMatrix#permute_columns
+
+  * Added NMatrix#abs to compute element-wise absolute values, and
+    #abs_dtype to determine the dtype returned by a call to #abs on a
+    given matrix (needed for RSpec)
+
+  * Added NMatrix#size to compute the total number of cells in an
+    NMatrix object (solely accounting for the shape, not sparsity)
+
+  * Added RSpec monkey patches for #be_within to work with NMatrix
+    objects; usable by requiring "nmatrix/rspec"
+
+  * Added experimental NMatrix::LAPACK::lapack_gesvd function (which
+    does NOT depend upon CLAPACK) (by @ryanmt and @mohawkjohn)
+
+  * Added experimental non-LAPACK-dependent function
+    NMatrix::LAPACK::lapack_gesdd
+
+  * Added NMatrix#supershape method for getting the shape of a
+    slice's parent or other ancestor, which may be useful for calling
+    ATLAS and LAPACK functions on slices
+
+  * Aliased NMatrix[] to function like N[] shortcut for matrix
+    creation (by @agarie)
+
+  * Added #layer for matrices with dimension greater than two
+    (corresponds to #row and #column)
+
+  * Added #rank and #each_rank generics for #row/#column/#layer and
+    #each_row/#each_column/#each_layer respectively (#each_rank
+    replaces #each_along_dim)
+
+  * Replaced #reduce_along_dim with #inject_rank
+
+  * NMatrix#to_a now works for up to two dimensional matrices; and
+    returns a flattened array for single-row matrices
+
+  * NMatrix#to_flat_a now returns a flattened array of all entries
+
+  * Re-organized NMatrix Ruby sources into multiple files: math.rb
+    for instance methods which are mathematical in nature or are
+    essentially ATLAS/LAPACK/BLAS calls, enumerate.rb for methods
+    involving enumeration; and existing shortcuts.rb for convenience
+    functions and shortcut constructors, and nmatrix.rb for core
+    functionality (#inspect, #to_h, #to_a, #to_s, #pretty_print,
+    and so on)
+
+  * Improved #pretty_print, which now also prints layers (the third
+    dimension in a 3D matrix)
+
+  * Re-factored some of dense slicing to remove some redundant code
+
+  * Added shortcut functions #list?, #dense?, #yale? for quickly
+    testing matrix storage type
+
+* 5 bug fixes:
+
+  * Fixed compilation problem involving <typeinfo> and <vector> STL
+    headers
+
+  * Fixed NMatrix#inverse problem with non-square matrices
+
+  * Fixed invalid read problem detected by Valgrind for
+    Yale element-wise subtraction in spec
+
+  * Fixed conversion from Ruby object to Complex and Rational
+
+  * Fixed memory leak in slicing
+
+=== 0.0.8 / 2013-08-23
+
+* 2 bug fixes:
+
+  * Fixed Ubuntu compilation bug caused by math header file
+    refactoring
+
+  * Fixed pry version error which manifests on some systems but not
+    others
+
+=== 0.0.9 / 2013-09-??
+
+ * 1 major enhancements:
+
+   * Left-assignment of slices for single values now works for dense,
+     list matrices
+
+ * 0 minor enhancements:
+
+ * 0 bug fixes:
+

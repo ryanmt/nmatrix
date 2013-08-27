@@ -139,7 +139,8 @@ DENSE_STORAGE* create_from_yale_storage(const YALE_STORAGE* rhs, dtype_t l_dtype
 
   // Allocate and set shape.
   size_t* shape = ALLOC_N(size_t, rhs->dim);
-  memcpy(shape, rhs->shape, rhs->dim * sizeof(size_t));
+  shape[0] = rhs->shape[0];
+  shape[1] = rhs->shape[1];
 
   DENSE_STORAGE* lhs = nm_dense_storage_create(l_dtype, shape, rhs->dim, NULL, 0);
   LDType* lhs_elements = reinterpret_cast<LDType*>(lhs->elements);
@@ -147,45 +148,49 @@ DENSE_STORAGE* create_from_yale_storage(const YALE_STORAGE* rhs, dtype_t l_dtype
   // Position in dense to write to.
   size_t pos = 0;
 
-  LDType LCAST_ZERO = rhs_a[rhs->shape[0]];
+  LDType LCAST_ZERO = rhs_a[rhs->src->shape[0]];
 
   // Walk through rows. For each entry we set in dense, increment pos.
-  for (RIType i = 0; i < rhs->shape[0]; ++i) {
+  for (size_t i = 0; i < shape[0]; ++i) {
+    RIType ri = i + rhs->offset[0];
 
-    // Position in yale array
-    RIType ija = rhs_ija[i];
-
-    if (ija == rhs_ija[i+1]) { // Check boundaries of row: is row empty?
+    if (rhs_ija[ri] == rhs_ija[ri+1]) { // Check boundaries of row: is row empty? (Yes.)
 
 			// Write zeros in each column.
-			for (RIType j = 0; j < rhs->shape[1]; ++j) { // Move to next dense position.
+			for (size_t j = 0; j < shape[1]; ++j) { // Move to next dense position.
 
-        // Fill in zeros (except for diagonal)
-        if (i == j) lhs_elements[pos] = static_cast<LDType>(rhs_a[i]);
-				else        lhs_elements[pos] = LCAST_ZERO;
+        // Fill in zeros and copy the diagonal entry for this empty row.
+        if (ri == j + rhs->offset[1]) lhs_elements[pos] = static_cast<LDType>(rhs_a[ri]);
+				else                          lhs_elements[pos] = LCAST_ZERO;
 
 				++pos;
       }
 
-    } else {
-      // Row contains entries: write those in each column, interspersed with zeros.
-      RIType jj = rhs_ija[ija];
+    } else {  // Row contains entries: write those in each column, interspersed with zeros.
 
-			for (size_t j = 0; j < rhs->shape[1]; ++j) {
-        if (i == j) {
-          lhs_elements[pos] = static_cast<LDType>(rhs_a[i]);
+      // Get the first ija position of the row (as sliced)
+      RIType ija = nm::yale_storage::binary_search_left_boundary<RIType>(rhs, rhs_ija[ri], rhs_ija[ri+1]-1, rhs->offset[1]);
 
-        } else if (j == jj) {
+      // What column is it?
+      RIType next_stored_rj = rhs_ija[ija];
+
+			for (size_t j = 0; j < shape[1]; ++j) {
+			  RIType rj = j + rhs->offset[1];
+
+        if (rj == ri) { // at a diagonal in RHS
+          lhs_elements[pos] = static_cast<LDType>(rhs_a[ri]);
+
+        } else if (rj == next_stored_rj) { // column ID was found in RHS
           lhs_elements[pos] = static_cast<LDType>(rhs_a[ija]); // Copy from rhs.
 
           // Get next.
           ++ija;
 
           // Increment to next column ID (or go off the end).
-          if (ija < rhs_ija[i+1]) jj = rhs_ija[ija];
-          else               	    jj = rhs->shape[1];
+          if (ija < rhs_ija[ri+1]) next_stored_rj = rhs_ija[ija];
+          else               	     next_stored_rj = rhs->src->shape[1];
 
-        } else { // j < jj
+        } else { // rj < next_stored_rj
 
           // Insert zero.
           lhs_elements[pos] = LCAST_ZERO;
@@ -261,7 +266,7 @@ static bool cast_copy_contents_dense(LIST* lhs, const RDType* rhs, RDType* zero,
  * Creation of list storage from dense storage.
  */
 template <typename LDType, typename RDType>
-LIST_STORAGE* create_from_dense_storage(const DENSE_STORAGE* rhs, dtype_t l_dtype) {
+LIST_STORAGE* create_from_dense_storage(const DENSE_STORAGE* rhs, dtype_t l_dtype, void* init) {
 
   LDType* l_default_val = ALLOC_N(LDType, 1);
   RDType* r_default_val = ALLOCA_N(RDType, 1); // clean up when finished with this function
@@ -274,13 +279,16 @@ LIST_STORAGE* create_from_dense_storage(const DENSE_STORAGE* rhs, dtype_t l_dtyp
   memset(coords, 0, rhs->dim * sizeof(size_t));
 
   // set list default_val to 0
-  if (l_dtype == RUBYOBJ)  	*l_default_val = INT2FIX(0);
-  else    	                *l_default_val = 0;
+  if (init) *l_default_val = *reinterpret_cast<LDType*>(init);
+  else {
+    if (l_dtype == RUBYOBJ)  	*l_default_val = INT2FIX(0);
+    else    	                *l_default_val = 0;
+  }
 
   // need test default value for comparing to elements in dense matrix
-  if (rhs->dtype == l_dtype)  	  *r_default_val = static_cast<RDType>(*l_default_val);
-  else if (rhs->dtype == RUBYOBJ) *r_default_val = INT2FIX(0);
-  else  	                        *r_default_val = 0;
+  if (rhs->dtype == l_dtype || rhs->dtype != RUBYOBJ) *r_default_val = static_cast<RDType>(*l_default_val);
+  else                                                *r_default_val = rubyobj_from_cval(l_default_val, l_dtype);
+
 
   LIST_STORAGE* lhs = nm_list_storage_create(l_dtype, shape, rhs->dim, l_default_val);
 
@@ -316,7 +324,7 @@ LIST_STORAGE* create_from_yale_storage(const YALE_STORAGE* rhs, dtype_t l_dtype)
   shape[0] = rhs->shape[0]; shape[1] = rhs->shape[1];
 
   RDType* rhs_a    = reinterpret_cast<RDType*>(rhs->a);
-  RDType R_ZERO    = rhs_a[ rhs->shape[0] ];
+  RDType R_ZERO    = rhs_a[ rhs->src->shape[0] ];
 
   // copy default value from the zero location in the Yale matrix
   LDType* default_val = ALLOC_N(LDType, 1);
@@ -330,35 +338,43 @@ LIST_STORAGE* create_from_yale_storage(const YALE_STORAGE* rhs, dtype_t l_dtype)
 
   NODE *last_row_added = NULL;
   // Walk through rows and columns as if RHS were a dense matrix
-  for (RIType i = 0; i < rhs->shape[0]; ++i) {
+  for (RIType i = 0; i < shape[0]; ++i) {
+    RIType ri = i + rhs->offset[0];
+
     NODE *last_added = NULL;
 
     // Get boundaries of beginning and end of row
-    RIType ija      = rhs_ija[i],
-           ija_next = rhs_ija[i+1];
+    RIType ija      = rhs_ija[ri],
+           ija_next = rhs_ija[ri+1];
 
     // Are we going to need to add a diagonal for this row?
     bool add_diag = false;
-    if (rhs_a[i] != R_ZERO) add_diag = true;
+    if (rhs_a[ri] != R_ZERO) add_diag = true; // non-zero and located within the bounds of the slice
 
     if (ija < ija_next || add_diag) {
+      ija = nm::yale_storage::binary_search_left_boundary<RIType>(rhs, ija, ija_next-1, rhs->offset[1]);
 
       LIST* curr_row = list::create();
 
       LDType* insert_val;
 
       while (ija < ija_next) {
-        RIType jj = rhs_ija[ija]; // what column number is this?
+        // Find first column in slice
+        RIType rj = rhs_ija[ija];
+        RIType j  = rj - rhs->offset[1];
 
         // Is there a nonzero diagonal item between the previously added item and the current one?
-        if (jj > i && add_diag) {
+        if (rj > ri && add_diag) {
           // Allocate and copy insertion value
           insert_val  = ALLOC_N(LDType, 1);
-          *insert_val = static_cast<LDType>(rhs_a[i]);
+          *insert_val = static_cast<LDType>(rhs_a[ri]);
 
-          // insert the item in the list at the appropriate location
-          if (last_added) 	last_added = list::insert_after(last_added, i, insert_val);
-          else            	last_added = list::insert(curr_row, false, i, insert_val);
+          // Insert the item in the list at the appropriate location.
+          // What is the appropriate key? Well, it's definitely right(i)==right(j), but the
+          // rj index has already been advanced past ri. So we should treat ri as the column and
+          // subtract offset[1].
+          if (last_added) 	last_added = list::insert_after(last_added, ri - rhs->offset[1], insert_val);
+          else            	last_added = list::insert(curr_row, false,  ri - rhs->offset[1], insert_val);
 
 					// don't add again!
           add_diag = false;
@@ -368,20 +384,23 @@ LIST_STORAGE* create_from_yale_storage(const YALE_STORAGE* rhs, dtype_t l_dtype)
         insert_val  = ALLOC_N(LDType, 1);
         *insert_val = static_cast<LDType>(rhs_a[ija]);
 
-        if (last_added)    	last_added = list::insert_after(last_added, jj, insert_val);
-        else              	last_added = list::insert(curr_row, false, jj, insert_val);
+        if (last_added)    	last_added = list::insert_after(last_added, j, insert_val);
+        else              	last_added = list::insert(curr_row, false, j, insert_val);
 
         ++ija; // move to next entry in Yale matrix
       }
 
       if (add_diag) {
+
       	// still haven't added the diagonal.
         insert_val         = ALLOC_N(LDType, 1);
-        *insert_val        = static_cast<LDType>(rhs_a[i]);
+        *insert_val        = static_cast<LDType>(rhs_a[ri]);
 
         // insert the item in the list at the appropriate location
-        if (last_added)    	last_added = list::insert_after(last_added, i, insert_val);
-        else              	last_added = list::insert(curr_row, false, i, insert_val);
+        if (last_added)    	last_added = list::insert_after(last_added, ri - rhs->offset[1], insert_val);
+        else              	last_added = list::insert(curr_row, false, ri - rhs->offset[1], insert_val);
+
+        // no need to set add_diag to false because it'll be reset automatically in next iteration.
       }
 
       // Now add the list at the appropriate location
@@ -454,16 +473,20 @@ namespace yale_storage { // FIXME: Move to yale.cpp
    * Creation of yale storage from dense storage.
    */
   template <typename LDType, typename RDType, typename LIType>
-  YALE_STORAGE* create_from_dense_storage(const DENSE_STORAGE* rhs, dtype_t l_dtype) {
+  YALE_STORAGE* create_from_dense_storage(const DENSE_STORAGE* rhs, dtype_t l_dtype, void* init) {
+
     if (rhs->dim != 2) rb_raise(nm_eStorageTypeError, "can only convert matrices of dim 2 to yale");
 
     LIType pos = 0;
     LIType ndnz = 0;
 
-    RDType R_ZERO; // need zero for easier comparisons
-    if (rhs->dtype == RUBYOBJ)  R_ZERO = INT2FIX(0);
-    else                        R_ZERO = 0;
-
+    // We need a zero value. This should nearly always be zero, but sometimes you might want false or nil.
+    LDType    L_INIT(0);
+    if (init) {
+      if (l_dtype == RUBYOBJ) L_INIT = *reinterpret_cast<VALUE*>(init);
+      else                    L_INIT = rubyobj_from_cval(init, rhs->dtype);
+    }
+    RDType R_INIT = static_cast<RDType>(L_INIT);
 
     RDType* rhs_elements = reinterpret_cast<RDType*>(rhs->elements);
 
@@ -471,7 +494,7 @@ namespace yale_storage { // FIXME: Move to yale.cpp
     for (size_t i = rhs->shape[0]; i-- > 0;) {
       for (size_t j = rhs->shape[1]; j-- > 0;) {
         pos = rhs->stride[0]*(i + rhs->offset[0]) + rhs->stride[1]*(j + rhs->offset[1]);
-        if (i != j && rhs_elements[pos] != R_ZERO)	++ndnz;
+        if (i != j && rhs_elements[pos] != R_INIT)	++ndnz;
 
         // move forward 1 position in dense matrix elements array
       }
@@ -494,24 +517,23 @@ namespace yale_storage { // FIXME: Move to yale.cpp
     LIType* lhs_ija   = reinterpret_cast<LIType*>(lhs->ija);
 
     // Set the zero position in the yale matrix
-    lhs_a[shape[0]] = static_cast<LDType>(R_ZERO);
+    lhs_a[shape[0]]   = L_INIT;
 
     // Start just after the zero position.
     LIType ija = shape[0]+1;
-    LIType i;
     pos        = 0;
 
     // Copy contents
-    for (i = 0; i < rhs->shape[0]; ++i) {
+    for (LIType i = 0; i < rhs->shape[0]; ++i) {
       // indicate the beginning of a row in the IJA array
-      lhs_ija[i]= ija;
+      lhs_ija[i] = ija;
 
       for (LIType j = 0; j < rhs->shape[1];  ++j) {
-        pos = rhs->stride[0]*(i + rhs->offset[0]) + rhs->stride[1]*(j + rhs->offset[1]); // calc position with offsets
+        pos = rhs->stride[0] * (i + rhs->offset[0]) + rhs->stride[1] * (j + rhs->offset[1]); // calc position with offsets
 
         if (i == j) { // copy to diagonal
           lhs_a[i]     = static_cast<LDType>(rhs_elements[pos]);
-        } else if (rhs_elements[pos] != R_ZERO) { // copy nonzero to LU
+        } else if (rhs_elements[pos] != R_INIT) { // copy nonzero to LU
           lhs_ija[ija] = j; // write column index
           lhs_a[ija]   = static_cast<LDType>(rhs_elements[pos]);
 
@@ -564,13 +586,13 @@ namespace yale_storage { // FIXME: Move to yale.cpp
     // Copy contents 
     for (NODE* i_curr = rhs->rows->first; i_curr; i_curr = i_curr->next) {
 
-      // Shrink refernce
+      // Shrink reference
       int i = i_curr->key - rhs->offset[0];
       if (i < 0 || i >= (int)rhs->shape[0]) continue;
 
       for (NODE* j_curr = ((LIST*)(i_curr->val))->first; j_curr; j_curr = j_curr->next) {
         
-        // Shrink refernce
+        // Shrink reference
         int j = j_curr->key - rhs->offset[1];
         if (j < 0 || j >= (int)rhs->shape[1]) continue;
 
@@ -611,8 +633,8 @@ extern "C" {
    */
 
 
-  STORAGE* nm_yale_storage_from_dense(const STORAGE* right, nm::dtype_t l_dtype) {
-    NAMED_LRI_DTYPE_TEMPLATE_TABLE(ttable, nm::yale_storage::create_from_dense_storage, YALE_STORAGE*, const DENSE_STORAGE* rhs, nm::dtype_t l_dtype);
+  STORAGE* nm_yale_storage_from_dense(const STORAGE* right, nm::dtype_t l_dtype, void* init) {
+    NAMED_LRI_DTYPE_TEMPLATE_TABLE(ttable, nm::yale_storage::create_from_dense_storage, YALE_STORAGE*, const DENSE_STORAGE* rhs, nm::dtype_t l_dtype, void*);
 
     nm::itype_t itype = nm_yale_storage_default_itype((const YALE_STORAGE*)right);
 
@@ -621,10 +643,10 @@ extern "C" {
       return NULL;
     }
 
-    return (STORAGE*)ttable[l_dtype][right->dtype][itype]((const DENSE_STORAGE*)right, l_dtype);
+    return (STORAGE*)ttable[l_dtype][right->dtype][itype]((const DENSE_STORAGE*)right, l_dtype, init);
   }
 
-  STORAGE* nm_yale_storage_from_list(const STORAGE* right, nm::dtype_t l_dtype) {
+  STORAGE* nm_yale_storage_from_list(const STORAGE* right, nm::dtype_t l_dtype, void* dummy) {
     NAMED_LRI_DTYPE_TEMPLATE_TABLE(ttable, nm::yale_storage::create_from_list_storage, YALE_STORAGE*, const LIST_STORAGE* rhs, nm::dtype_t l_dtype);
 
     nm::itype_t itype = nm_yale_storage_default_itype((const YALE_STORAGE*)right);
@@ -637,7 +659,7 @@ extern "C" {
     return (STORAGE*)ttable[l_dtype][right->dtype][itype]((const LIST_STORAGE*)right, l_dtype);
   }
 
-  STORAGE* nm_dense_storage_from_list(const STORAGE* right, nm::dtype_t l_dtype) {
+  STORAGE* nm_dense_storage_from_list(const STORAGE* right, nm::dtype_t l_dtype, void* dummy) {
     NAMED_LR_DTYPE_TEMPLATE_TABLE(ttable, nm::dense_storage::create_from_list_storage, DENSE_STORAGE*, const LIST_STORAGE* rhs, nm::dtype_t l_dtype);
 
     if (!ttable[l_dtype][right->dtype]) {
@@ -648,7 +670,7 @@ extern "C" {
     return (STORAGE*)ttable[l_dtype][right->dtype]((const LIST_STORAGE*)right, l_dtype);
   }
 
-  STORAGE* nm_dense_storage_from_yale(const STORAGE* right, nm::dtype_t l_dtype) {
+  STORAGE* nm_dense_storage_from_yale(const STORAGE* right, nm::dtype_t l_dtype, void* dummy) {
     NAMED_LRI_DTYPE_TEMPLATE_TABLE(ttable, nm::dense_storage::create_from_yale_storage, DENSE_STORAGE*, const YALE_STORAGE* rhs, nm::dtype_t l_dtype);
 
     const YALE_STORAGE* casted_right = reinterpret_cast<const YALE_STORAGE*>(right);
@@ -661,18 +683,18 @@ extern "C" {
     return reinterpret_cast<STORAGE*>(ttable[l_dtype][right->dtype][casted_right->itype](casted_right, l_dtype));
   }
 
-  STORAGE* nm_list_storage_from_dense(const STORAGE* right, nm::dtype_t l_dtype) {
-    NAMED_LR_DTYPE_TEMPLATE_TABLE(ttable, nm::list_storage::create_from_dense_storage, LIST_STORAGE*, const DENSE_STORAGE*, nm::dtype_t);
+  STORAGE* nm_list_storage_from_dense(const STORAGE* right, nm::dtype_t l_dtype, void* init) {
+    NAMED_LR_DTYPE_TEMPLATE_TABLE(ttable, nm::list_storage::create_from_dense_storage, LIST_STORAGE*, const DENSE_STORAGE*, nm::dtype_t, void*);
 
     if (!ttable[l_dtype][right->dtype]) {
       rb_raise(nm_eDataTypeError, "casting between these dtypes is undefined");
       return NULL;
     }
 
-    return (STORAGE*)ttable[l_dtype][right->dtype]((DENSE_STORAGE*)right, l_dtype);
+    return (STORAGE*)ttable[l_dtype][right->dtype]((DENSE_STORAGE*)right, l_dtype, init);
   }
 
-  STORAGE* nm_list_storage_from_yale(const STORAGE* right, nm::dtype_t l_dtype) {
+  STORAGE* nm_list_storage_from_yale(const STORAGE* right, nm::dtype_t l_dtype, void* dummy) {
     NAMED_LRI_DTYPE_TEMPLATE_TABLE(ttable, nm::list_storage::create_from_yale_storage, LIST_STORAGE*, const YALE_STORAGE* rhs, nm::dtype_t l_dtype);
 
     const YALE_STORAGE* casted_right = reinterpret_cast<const YALE_STORAGE*>(right);
