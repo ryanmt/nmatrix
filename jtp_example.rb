@@ -17,7 +17,6 @@ class SVDMatrix < Matrix
   # A+=V(W'W)^(−1)W'U'
   def pinv
     (u, w, v) = self.decompose
-    binding.pry
     v * (w.t*w).inverse * w.t * u.t
   end
 end
@@ -65,7 +64,6 @@ module Savgol
   # returns an object that will convolve with the padded array
   def sg_weights(half_window, order, deriv=0)
     mat = SVDMatrix[ *(-half_window..half_window).map {|k| (0..order).map {|i| k**i }} ]
-    binding.pry
     mat.pinv.row(deriv).to_a
   end
 end
@@ -78,5 +76,5 @@ if __FILE__ == $0
   ar = [1, 2, 3, 4, 3.5, 5, 3, 2.2, 3, 0, -1, 2, 0, -2, -5, -8, -7, -2, 0, 1, 1] 
   smoothed = ar.savgol(5,3)
   # smoothed => [0.9999999725324346, 2.0000000115857715, 3.1285714305655055, 3.571428673088599, 4.271428614306785, 4.1257144088160675, 3.3685715767719575, 2.6971429967311664, 2.0400000845020303, 0.3257144724996456, -0.057142738662666615, 0.7999999264680943, 0.5142855346070793, -2.1714285517550818, -5.257142779184832, -7.657142699240195, -6.40000007190543, -2.771428896122372, 0.17142820252085061, 0.9142855954984234, 1.0000000154252753]
-  p smoothed
+  puts smoothed
 end

@@ -1,11 +1,11 @@
 $:.unshift "lib"
-puts require 'nmatrix'
+require 'nmatrix'
 
 require 'pry'
 
 class SVDMatrix < NMatrix
   def pinv
-    (s_temp,u,v) = NMatrix::LAPACK.svd(self, :arrays) 
+    (s_temp,u,v) = NMatrix::LAPACK.svd(self, :all) 
     # This differs from the example, as we run into size differences with the matrix outputs from SVD,
     # as U is supposed to be MxM and V* is NxN.  S(sigma) is returned from LAPACK as just diagonal elements, 
     # so I'm filling it into the MxN shape for the later processing
@@ -16,10 +16,10 @@ class SVDMatrix < NMatrix
     # then do the reversal and processing of the other elements
     # SOURCE: http://en.wikipedia.org/wiki/Moore%E2%80%93Penrose_pseudoinverse#Singular_value_decomposition_.28SVD.29
     if u.dtype == :complex64 or u.dtype == :complex128
-      v.conjugate_transpose * s.inverse.tranpose * w.conjugate_transpose
+      v.conjugate_transpose.dot(s.inverse.tranpose).dot(w.conjugate_transpose)
     else
       # "Finding the conjugate transpose of a matrix A with real entries reduces to finding the transpose of A, as the conjugate of a real number is the number itself." http://en.wikipedia.org/wiki/Conjugate_transpose
-      v.transpose * s.inverse.transpose * u.transpose
+      v.transpose.dot(s.inverse.transpose).dot(u.transpose)
     end
   end
 end
