@@ -11,7 +11,7 @@ class SVDMatrix < NMatrix
     # This differs from the example, as we run into size differences with the matrix outputs from SVD,
     # as U is supposed to be MxM and V* is NxN.  S(sigma) is returned from LAPACK as just diagonal elements, 
     # so I'm filling it into the MxN shape for the later processing
-    s = NMatrix.new( [u.shape.first, v.shape.first], 0, u.dtype)
+    s = NMatrix.new( [v.shape.first, v.shape.first], 0, u.dtype)
     p s_temp.to_a.map(&:first)
     if JTP_SVD
       s_temp = [1.3733482360839844, 6.092119216918945, 11.788289070129395, 1.017959475517273 ]
@@ -24,6 +24,7 @@ class SVDMatrix < NMatrix
       s_temp.col(0).to_a.each_with_index do |n, i| 
         s[i,i] = n.first 
       end
+      u = NMatrix.new(self.shape, (0..u.rows-2).map {|a| u.row(a).to_a}.flatten, v.dtype)
     end
     puts "S: "
     pp s
@@ -43,7 +44,8 @@ class SVDMatrix < NMatrix
       # "Finding the conjugate transpose of a matrix A with real entries reduces to finding the transpose of A, as the conjugate of a real number is the number itself." http://en.wikipedia.org/wiki/Conjugate_transpose
       # v.transpose.dot(s.transpose.dot(s).inverse).dot(u.transpose) # Fails for some reason...
       #v.transpose.dot(s.inverse.transpose).dot(u.transpose)
-     NMatrix::BLAS.gemm(v.transpose, NMatrix::BLAS.gemm(s.inverse.transpose, u.transpose))
+     #NMatrix::BLAS.gemm(v.transpose, NMatrix::BLAS.gemm(s.inverse.transpose, u.transpose))
+     v.dot(s.transpose.dot(s).inverse.dot(s.transpose.dot(u.transpose)))
     end
   end
 end

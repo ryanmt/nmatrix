@@ -70,7 +70,7 @@ class SVDMatrix < Matrix
     u.pretty_print
     puts "V: "
     v.pretty_print
-    binding.pry
+    #binding.pry
     v * (w.t*w).inverse * w.t * u.t
   end
 end
