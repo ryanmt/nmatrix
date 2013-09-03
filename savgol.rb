@@ -43,7 +43,7 @@ class SVDMatrix < NMatrix
       # "Finding the conjugate transpose of a matrix A with real entries reduces to finding the transpose of A, as the conjugate of a real number is the number itself." http://en.wikipedia.org/wiki/Conjugate_transpose
       # v.transpose.dot(s.transpose.dot(s).inverse).dot(u.transpose) # Fails for some reason...
       #v.transpose.dot(s.inverse.transpose).dot(u.transpose)
-     NMatrix::BLAS.gemm(v.transpose, NMatrix::BLAS.gemm(s.inverse.transpose, u.transpose))
+     NMatrix::BLAS.gemm(v.transpose, NMatrix::BLAS.gemm(NMatrix::BLAS.gemm(s.inverse.transpose,s), u.transpose))
     end
   end
 end
