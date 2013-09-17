@@ -5,7 +5,7 @@ require 'pry'
 
 JTP_SVD = false
 
-class SVDMatrix < NMatrix
+class NMatrix
   def pinv
     (s_temp,u,v) = NMatrix::LAPACK.svd(self, :all) 
     # This differs from the example, as we run into size differences with the matrix outputs from SVD,
@@ -43,9 +43,12 @@ class SVDMatrix < NMatrix
       # "Finding the conjugate transpose of a matrix A with real entries reduces to finding the transpose of A, as the conjugate of a real number is the number itself." http://en.wikipedia.org/wiki/Conjugate_transpose
       # v.transpose.dot(s.transpose.dot(s).inverse).dot(u.transpose) # Fails for some reason...
       #v.transpose.dot(s.inverse.transpose).dot(u.transpose)
-     NMatrix::BLAS.gemm(v.transpose, NMatrix::BLAS.gemm(NMatrix::BLAS.gemm(s.inverse.transpose,s), u.transpose))
+     NMatrix::BLAS.gemm(v.transpose, NMatrix::BLAS.gemm(s.inverse.transpose, u.transpose))
     end
   end
+end
+
+class SVDMatrix < NMatrix
 end
 
 
@@ -68,6 +71,7 @@ module Savgol
     half_window = (window_size -1) / 2
     weights = sg_weights(half_window, order, deriv)
     ar = sg_pad_ends(half_window)
+    binding.pry
     sg_convolve(ar, weights)
   end
 
@@ -105,7 +109,8 @@ end
  
 if __FILE__ == $0
   ar = [1, 2, 3, 4, 3.5, 5, 3, 2.2, 3, 0, -1, 2, 0, -2, -5, -8, -7, -2, 0, 1, 1] 
-  smoothed = ar.savgol(5,3)
+  ar2 = [9.5e-07, 9.0e-07, 8.7e-07, -2.0e-07, -1.5e-06, -1.57e-06, -1.65e-06, -1.8e-06, -1.55e-06, -1.45e-06, -1.6e-06, -1.61e-06, -1.95e-06, -1.86e-06, -1.82e-06, -1.6e-06, -1.7e-06, -1.58e-06, -1.63e-06, -1.52e-06, -1.45e-06, -1.59e-06, -1.57e-06, -1.28e-06, -1.35e-06, -1.27e-06, -1.25e-06, -1.0e-06, -9.5e-07, -1.1e-06, -6.0e-07, -4.0e-07, -4.2e-07, -1.8e-07, -1.7e-07, -1.6e-07, 8.0e-08, 0.0, 6.0e-08, -4.0e-08, 2.0e-08, -3.0e-08, 4.0e-08, 3.0e-08, -2.0e-08, 7.0e-08, -1.0e-08, 7.0e-08, -1.0e-08, 6.0e-08, 4.0e-08, -3.0e-08, 7.0e-08, 4.0e-08, 6.0e-08, 1.5e-07, -1.0e-08, 1.0e-07, 2.0e-07, 8.0e-08, 6.0e-08, 4.0e-08, 9.0e-08, 6.0e-08, 9.5e-08, 6.0e-08, 1.0e-07, 7.0e-08]
+  smoothed = ar2.savgol(5,1)
   # smoothed => [0.9999999725324346, 2.0000000115857715, 3.1285714305655055, 3.571428673088599, 4.271428614306785, 4.1257144088160675, 3.3685715767719575, 2.6971429967311664, 2.0400000845020303, 0.3257144724996456, -0.057142738662666615, 0.7999999264680943, 0.5142855346070793, -2.1714285517550818, -5.257142779184832, -7.657142699240195, -6.40000007190543, -2.771428896122372, 0.17142820252085061, 0.9142855954984234, 1.0000000154252753]
   puts smoothed
 end
