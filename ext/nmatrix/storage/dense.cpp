@@ -99,6 +99,69 @@ namespace nm { namespace dense_storage {
 
   }
 
+  /*
+   * Recursive function, sets multiple values in a matrix from a single source value. Same basic pattern as slice_copy.
+   */
+  template <typename D>
+  static void slice_set(DENSE_STORAGE* dest, size_t* lengths, size_t pdest, size_t rank, D* const v, size_t v_size, size_t& v_offset) {
+    if (dest->dim - rank > 1) {
+      for (size_t i = 0; i < lengths[rank]; ++i) {
+        slice_set<D>(dest, lengths, pdest + dest->stride[rank] * i, rank + 1, v, v_size, v_offset);
+      }
+    } else {
+      for (size_t p = 0; p < lengths[rank]; ++p, ++v_offset) {
+        if (v_offset >= v_size) v_offset %= v_size;
+
+        D* elem = reinterpret_cast<D*>(dest->elements);
+        elem[p + pdest] = v[v_offset];
+      }
+    }
+  }
+
+
+  /*
+   * Dense storage set/slice-set function, templated version.
+   */
+  template <typename D>
+  void set(VALUE left, SLICE* slice, VALUE right) {
+    DENSE_STORAGE* s = NM_STORAGE_DENSE(left);
+
+    std::pair<NMATRIX*,bool> nm_and_free =
+      interpret_arg_as_dense_nmatrix(right, NM_DTYPE(left));
+
+    // Map the data onto D* v.
+    D*     v;
+    size_t v_size = 1;
+
+    if (nm_and_free.first) {
+      DENSE_STORAGE* t = reinterpret_cast<DENSE_STORAGE*>(nm_and_free.first->storage);
+      v                = reinterpret_cast<D*>(t->elements);
+      v_size           = nm_storage_count_max_elements(t);
+
+    } else if (TYPE(right) == T_ARRAY) {
+      v_size = RARRAY_LEN(right);
+      v      = ALLOC_N(D, v_size);
+      for (size_t m = 0; m < v_size; ++m) {
+        rubyval_to_cval(rb_ary_entry(right, m), s->dtype, &(v[m]));
+      }
+    } else {
+      v = reinterpret_cast<D*>(rubyobj_to_cval(right, NM_DTYPE(left)));
+    }
+
+    if (slice->single) {
+      reinterpret_cast<D*>(s->elements)[nm_dense_storage_pos(s, slice->coords)] = *v;
+    } else {
+      size_t v_offset = 0;
+      slice_set(s, slice->lengths, nm_dense_storage_pos(s, slice->coords), 0, v, v_size, v_offset);
+    }
+
+    // Only free v if it was allocated in this function.
+    if (nm_and_free.first && nm_and_free.second)
+      nm_delete(nm_and_free.first);
+    else
+      xfree(v);
+  }
+
 }} // end of namespace nm::dense_storage
 
 
@@ -216,15 +279,18 @@ void nm_dense_storage_delete_ref(STORAGE* s) {
 /*
  * Mark values in a dense matrix for garbage collection. This may not be necessary -- further testing required.
  */
-void nm_dense_storage_mark(void* storage_base) {
+void nm_dense_storage_mark(STORAGE* storage_base) {
+
   DENSE_STORAGE* storage = (DENSE_STORAGE*)storage_base;
 
   if (storage && storage->dtype == nm::RUBYOBJ) {
     VALUE* els = reinterpret_cast<VALUE*>(storage->elements);
 
-  	for (size_t index = nm_storage_count_max_elements(storage); index-- > 0;) {
-      rb_gc_mark(els[index]);
-    }
+    rb_gc_mark_locations(els, els + nm_storage_count_max_elements(storage) * sizeof(VALUE));
+
+  	//for (size_t index = nm_storage_count_max_elements(storage); index-- > 0;) {
+    //  rb_gc_mark(els[index]);
+    //}
   }
 }
 
@@ -254,6 +320,8 @@ VALUE nm_dense_map_pair(VALUE self, VALUE right) {
   DENSE_STORAGE* result = nm_dense_storage_create(nm::RUBYOBJ, shape_copy, s->dim, NULL, 0);
   VALUE* result_elem = reinterpret_cast<VALUE*>(result->elements);
 
+  nm_register_values(result_elem, count);
+
   for (size_t k = 0; k < count; ++k) {
     nm_dense_storage_coords(result, k, coords);
     size_t s_index = nm_dense_storage_pos(s, coords),
@@ -266,10 +334,13 @@ VALUE nm_dense_map_pair(VALUE self, VALUE right) {
   }
 
   NMATRIX* m = nm_create(nm::DENSE_STORE, reinterpret_cast<STORAGE*>(result));
+  VALUE rb_nm = Data_Wrap_Struct(CLASS_OF(self), nm_mark, nm_delete, m);
 
-  return Data_Wrap_Struct(CLASS_OF(self), nm_dense_storage_mark, nm_delete, m);
+  nm_unregister_values(result_elem, count);
+
+  return rb_nm;
+
 }
-
 
 /*
  * map enumerator for dense matrices.
@@ -290,6 +361,8 @@ VALUE nm_dense_map(VALUE self) {
   DENSE_STORAGE* result = nm_dense_storage_create(nm::RUBYOBJ, shape_copy, s->dim, NULL, 0);
   VALUE* result_elem = reinterpret_cast<VALUE*>(result->elements);
 
+  nm_register_values(result_elem, count);
+
   for (size_t k = 0; k < count; ++k) {
     nm_dense_storage_coords(result, k, coords);
     size_t s_index = nm_dense_storage_pos(s, coords);
@@ -298,8 +371,12 @@ VALUE nm_dense_map(VALUE self) {
   }
 
   NMATRIX* m = nm_create(nm::DENSE_STORE, reinterpret_cast<STORAGE*>(result));
+  VALUE rb_nm = Data_Wrap_Struct(CLASS_OF(self), nm_mark, nm_delete, m);
 
-  return Data_Wrap_Struct(CLASS_OF(self), nm_dense_storage_mark, nm_delete, m);
+  nm_unregister_values(result_elem, count);
+
+  return rb_nm;
+
 }
 
 
@@ -408,7 +485,7 @@ static void slice_copy(DENSE_STORAGE *dest, const DENSE_STORAGE *src, size_t* le
  *
  * FIXME: Template the first condition.
  */
-void* nm_dense_storage_get(STORAGE* storage, SLICE* slice) {
+void* nm_dense_storage_get(const STORAGE* storage, SLICE* slice) {
   DENSE_STORAGE* s = (DENSE_STORAGE*)storage;
 
   if (slice->single)
@@ -437,7 +514,7 @@ void* nm_dense_storage_get(STORAGE* storage, SLICE* slice) {
  *
  * FIXME: Template the first condition.
  */
-void* nm_dense_storage_ref(STORAGE* storage, SLICE* slice) {
+void* nm_dense_storage_ref(const STORAGE* storage, SLICE* slice) {
   DENSE_STORAGE* s = (DENSE_STORAGE*)storage;
 
   if (slice->single)
@@ -466,44 +543,15 @@ void* nm_dense_storage_ref(STORAGE* storage, SLICE* slice) {
 }
 
 
-/*
- * Recursive function, sets multiple values in a matrix from a single source value. Same basic pattern as slice_copy.
- */
-static void slice_set_single(DENSE_STORAGE* dest, void* src, size_t* lengths, size_t pdest, size_t n) {
-  if (dest->dim - n > 1) {
-    for (size_t i = 0; i < lengths[n]; ++i) {
-      slice_set_single(dest, src, lengths, pdest + dest->stride[n] * i, n + 1);
-    }
-  } else {
-    for (size_t p = 0; p < lengths[n]; ++p) {
-      memcpy((char*)(dest->elements) + (p + pdest) * DTYPE_SIZES[dest->dtype], src, DTYPE_SIZES[dest->dtype]);
-    }
-  }
-}
 
 
 /*
  * Set a value or values in a dense matrix. Requires that right be either a single value or an NMatrix (ref or real).
  */
 void nm_dense_storage_set(VALUE left, SLICE* slice, VALUE right) {
-  DENSE_STORAGE* s = NM_STORAGE_DENSE(left);
+  NAMED_DTYPE_TEMPLATE_TABLE(ttable, nm::dense_storage::set, void, VALUE, SLICE*, VALUE)
 
-  if (TYPE(right) == T_DATA) {
-    if (RDATA(right)->dfree == (RUBY_DATA_FUNC)nm_delete || RDATA(right)->dfree == (RUBY_DATA_FUNC)nm_delete_ref) {
-      rb_raise(rb_eNotImpError, "this type of slicing not yet supported");
-    } else {
-      rb_raise(rb_eTypeError, "unrecognized type for slice assignment");
-    }
-  } else {
-    void* val = rubyobj_to_cval(right, s->dtype);
-    if (slice->single)
-      memcpy((char*)(s->elements) + nm_dense_storage_pos(s, slice->coords) * DTYPE_SIZES[s->dtype], val, DTYPE_SIZES[s->dtype]);
-    else
-      slice_set_single(s, val, slice->lengths, nm_dense_storage_pos(s, slice->coords), 0);
-
-    xfree(val);
-  }
-
+  ttable[NM_DTYPE(left)](left, slice, right);
 }
 
 
@@ -711,7 +759,35 @@ STORAGE* nm_dense_storage_copy_transposed(const STORAGE* rhs_base) {
 
 } // end of extern "C" block
 
-namespace nm { namespace dense_storage {
+namespace nm {
+
+/*
+ * Used for slice setting. Takes the right-hand of the equal sign, a single VALUE, and massages
+ * it into the correct form if it's not already there (dtype, non-ref, dense). Returns a pair of the NMATRIX* and a
+ * boolean. If the boolean is true, the calling function is responsible for calling nm_delete on the NMATRIX*.
+ * Otherwise, the NMATRIX* still belongs to Ruby and Ruby will free it.
+ */
+std::pair<NMATRIX*,bool> interpret_arg_as_dense_nmatrix(VALUE right, nm::dtype_t dtype) {
+  if (TYPE(right) == T_DATA && (RDATA(right)->dfree == (RUBY_DATA_FUNC)nm_delete || RDATA(right)->dfree == (RUBY_DATA_FUNC)nm_delete_ref)) {
+    NMATRIX *r;
+    if (NM_STYPE(right) != DENSE_STORE || NM_DTYPE(right) != dtype || NM_SRC(right) != NM_STORAGE(right)) {
+      UnwrapNMatrix( right, r );
+      NMATRIX* ldtype_r = nm_cast_with_ctype_args(r, nm::DENSE_STORE, dtype, NULL);
+      return std::make_pair(ldtype_r,true);
+    } else {  // simple case -- right-hand matrix is dense and is not a reference and has same dtype
+      UnwrapNMatrix( right, r );
+      return std::make_pair(r, false);
+    }
+    // Do not set v_alloc = true for either of these. It is the responsibility of r/ldtype_r
+  } else if (TYPE(right) == T_DATA) {
+    rb_raise(rb_eTypeError, "unrecognized type for slice assignment");
+  }
+
+  return std::make_pair<NMATRIX*,bool>(NULL, false);
+}
+
+
+namespace dense_storage {
 
 /////////////////////////
 // Templated Functions //

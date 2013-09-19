@@ -116,6 +116,37 @@ void mark(LIST* list, size_t recursions) {
 // Accessors //
 ///////////////
 
+
+/*
+ * Given a list, insert key/val as the first entry in the list. Does not do any
+ * checks, just inserts.
+ */
+NODE* insert_first_node(LIST* list, size_t key, void* val, size_t val_size) {
+  NODE* ins   = ALLOC(NODE);
+  ins->next   = list->first;
+
+  void* val_copy = ALLOC_N(char, val_size);
+  memcpy(val_copy, val, val_size);
+
+  ins->val    = reinterpret_cast<void*>(val_copy);
+  ins->key    = key;
+  list->first = ins;
+
+  return ins;
+}
+
+NODE* insert_first_list(LIST* list, size_t key, LIST* l) {
+  NODE* ins   = ALLOC(NODE);
+  ins->next   = list->first;
+
+  ins->val    = reinterpret_cast<void*>(l);
+  ins->key    = key;
+  list->first = ins;
+
+  return ins;
+}
+
+
 /* 
  * Given a list and a key/value-ptr pair, create a node (and return that node).
  * If NULL is returned, it means insertion failed.
@@ -300,12 +331,9 @@ bool node_is_within_slice(NODE* n, size_t coord, size_t len) {
 
 /*
  * Recursive removal of lists that may contain sub-lists. Stores the value ultimately removed in rm.
- *
- * FIXME: Could be made slightly faster by using a variety of find which also returns the previous node. This way,
- * FIXME: we can remove directly instead of calling remove() and doing the search over again.
  */
 bool remove_recursive(LIST* list, const size_t* coords, const size_t* offsets, const size_t* lengths, size_t r, const size_t& dim) {
-  std::cerr << "remove_recursive: " << r << std::endl;
+//  std::cerr << "remove_recursive: " << r << std::endl;
   // find the current coordinates in the list
   NODE* prev    = find_preceding_from_list(list, coords[r] + offsets[r]);
   NODE* n;
@@ -319,7 +347,7 @@ bool remove_recursive(LIST* list, const size_t* coords, const size_t* offsets, c
       bool remove_parent = remove_recursive(reinterpret_cast<LIST*>(n->val), coords, offsets, lengths, r+1, dim);
 
       if (remove_parent) { // now empty -- so remove the sub-list
-        std::cerr << r << ": removing parent list at " << n->key << std::endl;
+//        std::cerr << r << ": removing parent list at " << n->key << std::endl;
         xfree(remove_by_node(list, prev, n));
 
         if (prev) n  = prev->next && node_is_within_slice(prev->next, coords[r] + offsets[r], lengths[r]) ? prev->next : NULL;
@@ -338,7 +366,7 @@ bool remove_recursive(LIST* list, const size_t* coords, const size_t* offsets, c
   } else { // nodes here are not lists, but actual values
 
     while (n) {
-      std::cerr << r << ": removing node at " << n->key << std::endl;
+//      std::cerr << r << ": removing node at " << n->key << std::endl;
       xfree(remove_by_node(list, prev, n));
 
       if (prev) n  = prev->next && node_is_within_slice(prev->next, coords[r] + offsets[r], lengths[r]) ? prev->next : NULL;

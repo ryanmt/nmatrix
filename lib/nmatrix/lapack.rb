@@ -133,43 +133,32 @@ class NMatrix
       # * *Raises* :
       #   - +ArgumentError+ -> Expected dense NMatrix as first argument.
       #
-      def svd(matrix, u_type=:all, vt_type=:all)
+      def gesvd(matrix, type = :both)
         raise ArgumentError, 'Expected dense NMatrix as first argument.' unless matrix.is_a?(NMatrix) and matrix.stype == :dense
-        m = matrix.shape[0]
-        n = matrix.shape[1]
-        case u_type
-          when :a
-          when :all
-            ldu = m
-            usize = ldu
-          when :s
-          when :return
-            ldu = [m,n].min
-            usize = [1,ldu]
-          else
-            ldu = 1
-            usize = 0
-          end
+        #define jobu, jobvt
+        jobu, jobvt = :none, :none
+        case type
+        when :both
+         jobu, jobvt = :all, :all
+        when :arrays
+          jobu, jobvt = :return, :return
+        when :left
+          jobu = :return
+        when :right
+          jobvt = :return
+        end
+        
+        # Build up the u and vt matrices
+        m, n = matrix.shape
+        dtype = matrix.dtype
+        s_matrix = NMatrix.new([1,matrix.shape.min], dtype: dtype)
+        u_matrix = NMatrix.new([m,m], dtype: dtype)
+        v_matrix = NMatrix.new([n,n], dtype: dtype)
+        # test this
+        s = gesvd(type, matrix, s_matrix, u_matrix, v_matrix)
 
-        case vt_type
-          when :a
-          when :all
-            ldvt = n
-            vtsize = ldvt
-          when :s
-          when :return
-            ldvt = [n,m].min
-            vtsize = [ldvt,1]
-          else
-            ldvt = 1
-            vtsize = 0
-          end
-        lda = [1,m].max
-        s = NMatrix.new([[n,m].min,1], 0, matrix.dtype)
-        u = NMatrix.new(usize, 0, matrix.dtype)
-        vt = NMatrix.new(vtsize, 0, matrix.dtype)
-        NMatrix::LAPACK::lapack_gesvd(u_type, vt_type, m, n, matrix, m, s, u, ldu, vt, ldvt, 500)
-        [s, u, vt]
+        # what should this return?
+        [s_matrix, u_matrix, v_matrix]
       end # #svd
 
       #     laswp(matrix, ipiv) -> NMatrix
