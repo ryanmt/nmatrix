@@ -120,47 +120,6 @@ class NMatrix
         clapack_potrs(order, uplo, n, nrhs, a, lda, b, ldb)
       end
 
-      #
-      # call-seq:
-      #     gesvd(matrix, type)
-      # 
-      #
-      # * *Arguments* :
-      #   - +matrix+ -> matrix for which to compute the singular values ##TODO make this a self
-      #   - +type+ -> :all_values, :both, :left, :right, :left_matrix, :right_matrix, :overwrite_right, :overwrite_left, :none , or signifying what combination of singular values and matrices are desired in your output.
-      # * *Returns* :
-      #   - Array with the result values in an array
-      # * *Raises* :
-      #   - +ArgumentError+ -> Expected dense NMatrix as first argument.
-      #
-      def gesvd(matrix, type = :both)
-        raise ArgumentError, 'Expected dense NMatrix as first argument.' unless matrix.is_a?(NMatrix) and matrix.stype == :dense
-        #define jobu, jobvt
-        jobu, jobvt = :none, :none
-        case type
-        when :both
-         jobu, jobvt = :all, :all
-        when :arrays
-          jobu, jobvt = :return, :return
-        when :left
-          jobu = :return
-        when :right
-          jobvt = :return
-        end
-        
-        # Build up the u and vt matrices
-        m, n = matrix.shape
-        dtype = matrix.dtype
-        s_matrix = NMatrix.new([1,matrix.shape.min], dtype: dtype)
-        u_matrix = NMatrix.new([m,m], dtype: dtype)
-        v_matrix = NMatrix.new([n,n], dtype: dtype)
-        # test this
-        s = gesvd(type, matrix, s_matrix, u_matrix, v_matrix)
-
-        # what should this return?
-        [s_matrix, u_matrix, v_matrix]
-      end # #svd
-
       #     laswp(matrix, ipiv) -> NMatrix
       #
       # Permute the columns of a matrix (in-place) according to the Array +ipiv+.
