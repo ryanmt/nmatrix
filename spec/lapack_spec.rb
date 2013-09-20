@@ -260,7 +260,6 @@ describe NMatrix::LAPACK do
       end
  
       it "exposes the convenience gesvd method" do
-        pending "spec is possibly broken"
         # http://software.intel.com/sites/products/documentation/doclib/mkl_sa/11/mkl_lapack_examples/dgesvd_ex.c.htm
         if [:float32, :float64].include? dtype
           a = NMatrix.new([5,6], %w|8.79 9.93 9.83 5.45 3.16
@@ -294,7 +293,7 @@ describe NMatrix::LAPACK do
           ldvt= 6
         elsif [:complex64, :complex128].include? dtype
           #http://software.intel.com/sites/products/documentation/doclib/mkl_sa/11/mkl_lapack_examples/cgesvd_ex.c.htm
-         # pending "Example may be wrong"
+          pending "Example may be wrong"
           a = NMatrix.new([4,3], [[  5.91, -5.69], [  7.09,  2.72], [  7.78, -4.06], [ -0.79, -7.21], [ -3.15, -4.08], [ -1.89,  3.27], [  4.57, -2.07], [ -3.88, -3.30], [ -4.89,  4.20], [  4.10, -6.70], [  3.28, -3.84], [  3.84,  1.19]].map {|e| Complex(*e) } , dtype: dtype)
           s_true = NMatrix.new([3,1], [17.63, 11.61, 6.78], dtype: dtype)
           left_true = NMatrix.new([4,4], [[-0.86, 0.0], [0.4, 0.0], [0.32, 0.0], [-0.35, 0.13], [-0.24, -0.21], [-0.63, 0.6], [0.15, 0.32], [0.61, 0.61], [-0.36, 0.1]].map {|e| Complex(*e)}, dtype: dtype)
@@ -318,16 +317,10 @@ describe NMatrix::LAPACK do
               end
         err = err *5e1
         begin
-
-          resp = a.gesvd
-          p resp
-          p resp.class
           u, s, vt = a.gesvd
-
         rescue NotImplementedError => e
           pending e.to_s
         end
-
         u.should be_within(err).of(left_true)
         #FIXME: Is the next line correct?
         vt[0...right_true.shape[0], 0...right_true.shape[1]-1].should be_within(err).of(right_true[0...right_true.shape[0],0...right_true.shape[1]-1])
