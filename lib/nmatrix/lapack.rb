@@ -120,58 +120,6 @@ class NMatrix
         clapack_potrs(order, uplo, n, nrhs, a, lda, b, ldb)
       end
 
-      #
-      # call-seq:
-      #     gesvd(matrix, type)
-      # 
-      #
-      # * *Arguments* :
-      #   - +matrix+ -> matrix for which to compute the singular values ##TODO make this a self
-      #   - +type+ -> :all_values, :both, :left, :right, :left_matrix, :right_matrix, :overwrite_right, :overwrite_left, :none , or signifying what combination of singular values and matrices are desired in your output.
-      # * *Returns* :
-      #   - Array with the result values in an array
-      # * *Raises* :
-      #   - +ArgumentError+ -> Expected dense NMatrix as first argument.
-      #
-      def svd(matrix, u_type=:all, vt_type=:all)
-        raise ArgumentError, 'Expected dense NMatrix as first argument.' unless matrix.is_a?(NMatrix) and matrix.stype == :dense
-        m = matrix.shape[0]
-        n = matrix.shape[1]
-        case u_type
-          when :a
-          when :all
-            ldu = m
-            usize = ldu
-          when :s
-          when :return
-            ldu = [m,n].min
-            usize = [1,ldu]
-          else
-            ldu = 1
-            usize = 0
-          end
-
-        case vt_type
-          when :a
-          when :all
-            ldvt = n
-            vtsize = ldvt
-          when :s
-          when :return
-            ldvt = [n,m].min
-            vtsize = [ldvt,1]
-          else
-            ldvt = 1
-            vtsize = 0
-          end
-        lda = [1,m].max
-        s = NMatrix.new([[n,m].min,1], 0, matrix.dtype)
-        u = NMatrix.new(usize, 0, matrix.dtype)
-        vt = NMatrix.new(vtsize, 0, matrix.dtype)
-        NMatrix::LAPACK::lapack_gesvd(u_type, vt_type, m, n, matrix, m, s, u, ldu, vt, ldvt, 500)
-        [s, u, vt]
-      end # #svd
-
       #     laswp(matrix, ipiv) -> NMatrix
       #
       # Permute the columns of a matrix (in-place) according to the Array +ipiv+.
@@ -182,6 +130,47 @@ class NMatrix
         raise(ArgumentError, "expected Array ipiv to have no more entries than NMatrix a has columns") if ipiv.size > matrix.shape[1]
 
         clapack_laswp(matrix.shape[0], matrix, matrix.shape[1], 0, ipiv.size-1, ipiv, 1)
+      end
+
+      def alloc_svd_result(matrix)
+        [
+          NMatrix.new(matrix.shape[0], dtype: matrix.dtype),
+          NMatrix.new([matrix.shape[0],1], dtype: matrix.dtype),
+          NMatrix.new(matrix.shape[1], dtype: matrix.dtype)
+        ]
+      end
+
+      #
+      # call-seq:
+      #     gesvd -> [u, sigma, v_transpose]
+      #     gesvd -> [u, sigma, v_conjugate_transpose] # complex
+      #
+      # Compute the singular value decomposition of a matrix using LAPACK's GESVD function.
+      #
+      # Optionally accepts a +workspace_size+ parameter, which will be honored only if it is larger than what LAPACK
+      # requires.
+      #
+      def gesvd(matrix, workspace_size=1)
+        result = alloc_svd_result(matrix)
+        NMatrix::LAPACK::lapack_gesvd(:a, :a, matrix.shape[0], matrix.shape[1], matrix, matrix.shape[0], result[1], result[0], matrix.shape[0], result[2], matrix.shape[1], workspace_size)
+        result
+      end
+
+      #
+      # call-seq:
+      #     gesdd -> [u, sigma, v_transpose]
+      #     gesdd -> [u, sigma, v_conjugate_transpose] # complex
+      #
+      # Compute the singular value decomposition of a matrix using LAPACK's GESDD function. This uses a divide-and-conquer
+      # strategy. See also #gesvd.
+      #
+      # Optionally accepts a +workspace_size+ parameter, which will be honored only if it is larger than what LAPACK
+      # requires.
+      #
+      def gesdd(matrix, workspace_size=100000)
+        result = alloc_svd_result(matrix)
+        NMatrix::LAPACK::lapack_gesdd(:a, matrix.shape[0], matrix.shape[1], matrix, matrix.shape[0], result[1], result[0], matrix.shape[0], result[2], matrix.shape[1], workspace_size)
+        result
       end
 
     end
