@@ -27,9 +27,8 @@ which improve the portability of this project.
 
 Also required is ATLAS. Most Linux distributions and Mac
 versions include ATLAS, but you may wish to compile it
-yourself. Rumor has it that the Ubuntu/Debian apt package
-for ATLAS WILL NOT WORK with NMatrix. Please install it
-manually if you are using apt.
+yourself. The Ubuntu/Debian apt package for ATLAS WILL 
+NOT WORK with NMatrix if LAPACK is also installed.
 
 More explicit instructions for NMatrix and SciRuby should
 be available on the SciRuby website, sciruby.com, or
@@ -47,15 +46,15 @@ EOF
   gem.extensions = ['ext/nmatrix/extconf.rb']
   gem.require_paths = ["lib"]
 
-  gem.required_ruby_version = '>= 1.9.2'
+  gem.required_ruby_version = '>= 1.9'
 
   gem.add_dependency 'rdoc', '>=4.0.1'
-
-  gem.add_development_dependency 'rake', '~>0.9'
+  #gem.add_dependency 'yard'
+  gem.add_development_dependency 'rake'
   gem.add_development_dependency 'bundler'
-  gem.add_development_dependency 'rspec', '~>2.9.0'
+  gem.add_development_dependency 'rspec'
+  gem.add_development_dependency 'rspec-longrun'
   gem.add_development_dependency 'pry'
-  gem.add_development_dependency 'guard-rspec', '~>0.7.0'
   gem.add_development_dependency 'rake-compiler', '~>0.8.1'
 end
 

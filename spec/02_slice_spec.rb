@@ -20,23 +20,34 @@
 #
 # * https://github.com/SciRuby/sciruby/wiki/Contributor-Agreement
 #
-# == slice_spec.rb
+# == 02_slice_spec.rb
 #
-# Test of slice operations.
+# Test of slice operations. High priority tests since reference
+# slicing is needed for pretty_print.
 #
+require 'pry'
 require File.dirname(__FILE__) + "/spec_helper.rb"
 
 describe "Slice operation" do
+  include RSpec::Longrun::DSL
 
   [:dense, :list, :yale].each do |stype|
     context "for #{stype}" do
       before :each do
+        GC.start # don't have to do this, but it helps to make sure we've cleaned up our pointers properly.
         @m = create_matrix(stype)
+      end
+
+      it "should correctly return a row of a reference-slice" do
+        @n = create_rectangular_matrix(stype)
+        @m = @n[1..4,1..3]
+        @m.row(1, :copy).should == @m.row(1, :reference)
+        @m.row(1, :copy).to_flat_array.should == [12,13,0]
       end
 
       if stype == :yale
         it "should binary search for the left boundary of a partial row of stored indices correctly" do
-          n = NMatrix.new(:yale, 10, :int32)
+          n = NMatrix.new(10, stype: :yale, dtype: :int32)
           n[3,0] = 1
           #n[3,2] = 2
           n[3,3] = 3
@@ -47,6 +58,7 @@ describe "Slice operation" do
           vs = []
           is = []
           js = []
+
           n[3,1..9].each_stored_with_indices do |v,i,j|
             vs << v
             is << i
@@ -108,27 +120,16 @@ describe "Slice operation" do
         end
       end
 
-      it "should return correct shape and 1st-order supershape" do
+      it "should return correct supershape" do
         x = NMatrix.random([10,12])
         y = x[0...8,5...12]
         y.shape.should == [8,7]
         y.supershape.should == [10,12]
       end
 
-      it "should return correct 1st- and 2nd-order supershape" do
-        pending "Not yet sure if we ever want to enable reference slices of reference slices"
-        x = NMatrix.random([10,12])
-        y = x[0...8,5...12]
-        z = y[0...3,0...4]
-        z.supershape(2).should == y.supershape(1)
-        z.supershape(1).should == [8,7]
-      end
-
       it "should have #is_ref? method" do
         a = @m[0..1, 0..1]
         b = @m.slice(0..1, 0..1)
-
-
         @m.is_ref?.should be_false
         a.is_ref?.should be_true
         b.is_ref?.should be_false
@@ -143,7 +144,7 @@ describe "Slice operation" do
       context "with copying" do
         it 'should return an NMatrix' do
           n = @m.slice(0..1,0..1)
-          nm_eql(n, NMatrix.new([2,2], [0,1,3,4], :int32)).should be_true
+          nm_eql(n, NMatrix.new([2,2], [0,1,3,4], dtype: :int32)).should be_true
         end
 
         it 'should return a copy of 2x2 matrix to self elements' do
@@ -155,22 +156,28 @@ describe "Slice operation" do
           @m[2,1].should eql(7)
         end
 
-        it 'should return a 1x2 matrix with refs to self elements' do
+        it 'should return a 1x2 matrix without refs to self elements' do
           n = @m.slice(0,1..2)
           n.shape.should eql([1,2])
 
           n[0].should == @m[0,1]
+          n[1].should == @m[0,2]
           n[0] = -9
           @m[0,1].should eql(1)
+          @m[0,2].should eql(2)
         end
 
-        it 'should return a 2x1 matrix with refs to self elements' do
+        it 'should return a 2x1 matrix without refs to self elements' do
+          @m.extend NMatrix::YaleFunctions
+
           n = @m.slice(0..1,1)
           n.shape.should eql([2,1])
 
           n[0].should == @m[0,1]
+          n[1].should == @m[1,1]
           n[0] = -9
           @m[0,1].should eql(1)
+          @m[1,1].should eql(4)
         end
 
         it 'should be correct slice for range 0..2 and 0...3' do
@@ -178,7 +185,7 @@ describe "Slice operation" do
         end
 
         [:dense, :list, :yale].each do |cast_type|
-          it "should cast from #{stype.upcase} to #{cast_type.upcase}" do
+          it "should cast copied slice from #{stype.upcase} to #{cast_type.upcase}" do
             nm_eql(@m.slice(1..2, 1..2).cast(cast_type, :int32), @m.slice(1..2,1..2)).should be_true
             nm_eql(@m.slice(0..1, 1..2).cast(cast_type, :int32), @m.slice(0..1,1..2)).should be_true
             nm_eql(@m.slice(1..2, 0..1).cast(cast_type, :int32), @m.slice(1..2,0..1)).should be_true
@@ -186,6 +193,8 @@ describe "Slice operation" do
 
             # Non square
             nm_eql(@m.slice(0..2, 1..2).cast(cast_type, :int32), @m.slice(0..2,1..2)).should be_true
+            #require 'pry'
+            #binding.pry if cast_type == :yale
             nm_eql(@m.slice(1..2, 0..2).cast(cast_type, :int32), @m.slice(1..2,0..2)).should be_true
 
             # Full
@@ -208,7 +217,7 @@ describe "Slice operation" do
       context "by reference" do
         it 'should return an NMatrix' do
           n = @m[0..1,0..1]
-          nm_eql(n, NMatrix.new([2,2], [0,1,3,4], :int32)).should be_true
+          nm_eql(n, NMatrix.new([2,2], [0,1,3,4], dtype: :int32)).should be_true
         end
 
         it 'should return a 2x2 matrix with refs to self elements' do
@@ -240,7 +249,7 @@ describe "Slice operation" do
 
         it 'should slice again' do
           n = @m[1..2, 1..2]
-          nm_eql(n[1,0..1], NVector.new(2, [7,8], :int32).transpose).should be_true
+          nm_eql(n[1,0..1], NVector.new(2, [7,8], dtype: :int32).transpose).should be_true
         end
 
         it 'should be correct slice for range 0..2 and 0...3' do
@@ -276,8 +285,8 @@ describe "Slice operation" do
                          MATRIX32A_ARRAY
                        end
 
-                n = NMatrix.new([4,3], nary, left_dtype)[1..3,1..2]
-                m = NMatrix.new([3,2], mary, right_dtype)[1..2,0..1]
+                n = NMatrix.new([4,3], nary, dtype: left_dtype)[1..3,1..2]
+                m = NMatrix.new([3,2], mary, dtype: right_dtype)[1..2,0..1]
 
                 r = n.dot m
                 r.shape.should eql([3,2])
@@ -333,34 +342,41 @@ describe "Slice operation" do
 
         end
 
-        it 'should be cleaned up by garbage collector without errors'  do
-          1.times do
-            n = @m[1..2,0..1]
+        example 'should be cleaned up by garbage collector without errors'  do
+          step "reference slice" do
+            1.times do
+              n = @m[1..2,0..1]
+            end
+            GC.start
           end
-          GC.start
-          @m.should == NMatrix.new(:dense, [3,3], (0..9).to_a, :int32).cast(stype, :int32)
-          n = nil
-          1.times do
-            m = NMatrix.new(:dense, [2,2], [1,2,3,4]).cast(stype, :int32)
-            n = m[0..1,0..1]
+
+          step "reference slice of casted-copy" do
+            @m.should == NMatrix.new([3,3], (0..9).to_a, dtype: :int32).cast(stype, :int32)
+            n = nil
+            1.times do
+              m = NMatrix.new([2,2], [1,2,3,4]).cast(stype, :int32)
+              n = m[0..1,0..1]
+            end
+            GC.start
+            n.should == NMatrix.new([2,2], [1,2,3,4]).cast(stype, :int32)
           end
-          GC.start
-          n.should == NMatrix.new(:dense, [2,2], [1,2,3,4]).cast(stype, :int32)
         end
 
         [:dense, :list, :yale].each do |cast_type|
-          it "should cast from #{stype.upcase} to #{cast_type.upcase}" do
-
+          it "should cast a square reference-slice from #{stype.upcase} to #{cast_type.upcase}" do
             nm_eql(@m[1..2, 1..2].cast(cast_type), @m[1..2,1..2]).should be_true
             nm_eql(@m[0..1, 1..2].cast(cast_type), @m[0..1,1..2]).should be_true
             nm_eql(@m[1..2, 0..1].cast(cast_type), @m[1..2,0..1]).should be_true
             nm_eql(@m[0..1, 0..1].cast(cast_type), @m[0..1,0..1]).should be_true
+          end
 
+          it "should cast a rectangular reference-slice from #{stype.upcase} to #{cast_type.upcase}" do
             # Non square
-            nm_eql(@m[0..2, 1..2].cast(cast_type), @m[0..2,1..2]).should be_true
-            nm_eql(@m[1..2, 0..2].cast(cast_type), @m[1..2,0..2]).should be_true
+            nm_eql(@m[0..2, 1..2].cast(cast_type), @m[0..2,1..2]).should be_true # FIXME: memory problem.
+            nm_eql(@m[1..2, 0..2].cast(cast_type), @m[1..2,0..2]).should be_true # this one is fine
+          end
 
-            # Full
+          it "should cast a square full-matrix reference-slice from #{stype.upcase} to #{cast_type.upcase}" do
             nm_eql(@m[0..2, 0..2].cast(cast_type), @m).should be_true
           end
         end

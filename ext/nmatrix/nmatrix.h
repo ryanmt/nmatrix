@@ -198,7 +198,6 @@
  */
 
 #define NM_NUM_DTYPES 13  // data/data.h
-#define NM_NUM_ITYPES 4   // data/data.h
 #define NM_NUM_STYPES 3   // storage/storage.h
 
 //#ifdef __cplusplus
@@ -225,12 +224,6 @@ NM_DEF_ENUM(dtype_t,	BYTE				=  0,  // unsigned char
                     	RATIONAL128	= 11,  // Rational128 class
                     	RUBYOBJ			= 12);  // Ruby VALUE type
 
-/* Index Type for Yale Matrices */
-NM_DEF_ENUM(itype_t,  UINT8  = 0,
-                      UINT16 = 1,
-                      UINT32 = 2,
-                      UINT64 = 3);
-
 NM_DEF_ENUM(symm_t,   NONSYMM   = 0,
                       SYMM      = 1,
                       SKEW      = 2,
@@ -253,11 +246,10 @@ NM_DEF_STORAGE_STRUCT_POST(DENSE_STORAGE);     // };
 
 /* Yale Storage */
 NM_DEF_STORAGE_CHILD_STRUCT_PRE(YALE_STORAGE);
-	void* a;      // should go first
-	size_t ndnz; // Strictly non-diagonal non-zero count!
+	void*   a;      // should go first
+	size_t  ndnz; // Strictly non-diagonal non-zero count!
 	size_t	capacity;
-	NM_DECL_ENUM(itype_t, itype);
-	void*		ija;
+	size_t* ija;
 NM_DEF_STORAGE_STRUCT_POST(YALE_STORAGE);
 
 // FIXME: NODE and LIST should be put in some kind of namespace or something, at least in C++.
@@ -306,14 +298,14 @@ NM_DEF_STRUCT_POST(NMATRIX);  // };
 #define NM_SRC(val)             (NM_STORAGE(val)->src)
 #define NM_DIM(val)             (NM_STORAGE(val)->dim)
 #define NM_DTYPE(val)           (NM_STORAGE(val)->dtype)
-#define NM_ITYPE(val)           (NM_STORAGE_YALE(val)->itype)
 #define NM_STYPE(val)           (NM_STRUCT(val)->stype)
 #define NM_SHAPE(val,i)         (NM_STORAGE(val)->shape[(i)])
 #define NM_SHAPE0(val)          (NM_STORAGE(val)->shape[0])
 #define NM_SHAPE1(val)          (NM_STORAGE(val)->shape[1])
 #define NM_DEFAULT_VAL(val)     (NM_STORAGE_LIST(val)->default_val)
 
-#define NM_DENSE_COUNT(val)     (storage_count_max_elements(NM_STORAGE_DENSE(val)))
+#define NM_DENSE_COUNT(val)     (nm_storage_count_max_elements(NM_STORAGE_DENSE(val)))
+#define NM_DENSE_ELEMENTS(val)  (NM_STORAGE_DENSE(val)->elements)
 #define NM_SIZEOF_DTYPE(val)    (DTYPE_SIZES[NM_DTYPE(val)])
 #define NM_REF(val,slice)      (RefFuncs[NM_STYPE(val)]( NM_STORAGE(val), slice, NM_SIZEOF_DTYPE(val) ))
     
@@ -333,6 +325,10 @@ NM_DEF_STRUCT_POST(NMATRIX);  // };
 #define NM_IsNVector(obj) \
   (rb_obj_is_kind_of(obj, cNVector) == Qtrue)
 
+#define RB_P(OBJ) \
+	rb_funcall(rb_stderr, rb_intern("print"), 1, rb_funcall(OBJ, rb_intern("object_id"), 0)); \
+	rb_funcall(rb_stderr, rb_intern("puts"), 1, rb_funcall(OBJ, rb_intern("inspect"), 0));
+
 
 #ifdef __cplusplus
 typedef VALUE (*METHOD)(...);
@@ -345,6 +341,7 @@ typedef VALUE (*METHOD)(...);
  */
 
 #ifdef __cplusplus
+
 extern "C" {
 #endif
 
@@ -359,8 +356,14 @@ extern "C" {
 
   // Non-API functions needed by other cpp files.
 	NMATRIX* nm_create(nm::stype_t stype, STORAGE* storage);
+  NMATRIX* nm_cast_with_ctype_args(NMATRIX* self, nm::stype_t new_stype, nm::dtype_t new_dtype, void* init_ptr);
+	VALUE    nm_cast(VALUE self, VALUE new_stype_symbol, VALUE new_dtype_symbol, VALUE init);
+	void     nm_mark(NMATRIX* mat);
 	void     nm_delete(NMATRIX* mat);
 	void     nm_delete_ref(NMATRIX* mat);
+  void     nm_mark(NMATRIX* mat);
+  void     nm_register_values(VALUE* vals, size_t n);
+  void     nm_unregister_values(VALUE* vals, size_t n);
 
 #ifdef __cplusplus
 }

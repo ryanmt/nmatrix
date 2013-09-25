@@ -99,9 +99,9 @@ class NMatrix
 
   def alloc_svd_result
     [
-      NMatrix.new(:dense, self.shape[0], self.dtype),
-      NMatrix.new(:dense, [self.shape[0],1], self.dtype),
-      NMatrix.new(:dense, self.shape[1], self.dtype)
+      NMatrix.new(self.shape[0], dtype: self.dtype),
+      NMatrix.new([self.shape[0],1], dtype: self.dtype),
+      NMatrix.new(self.shape[1], dtype: self.dtype)
     ]
   end
 
@@ -117,7 +117,8 @@ class NMatrix
   #
   def gesvd(workspace_size=1)
     result = alloc_svd_result
-    NMatrix::LAPACK::lapack_gesvd(:a, :a, self.shape[0], self.shape[1], self, self.shape[0], result[1], result[0], self.shape[0], result[2], self.shape[1], workspace_size)
+    temp = self.dup
+    NMatrix::LAPACK::lapack_gesvd(:a, :a, self.shape[0], self.shape[1], temp, self.shape[0], result[1], result[0], self.shape[0], result[2], self.shape[1], workspace_size)
     result
   end
 
@@ -135,7 +136,8 @@ class NMatrix
   #
   def gesdd(workspace_size=1)
     result = alloc_svd_result
-    NMatrix::LAPACK::lapack_gesvd(:a, :a, self.shape[0], self.shape[1], self, self.shape[0], result[1], result[0], self.shape[0], result[2], self.shape[1], workspace_size)
+    temp = self.dup
+    NMatrix::LAPACK::lapack_gesvd(:a, :a, self.shape[0], self.shape[1], temp, self.shape[0], result[1], result[0], self.shape[0], result[2], self.shape[1], workspace_size)
     result
   end
 

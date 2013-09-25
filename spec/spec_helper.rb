@@ -22,7 +22,10 @@
 #
 # == spec_helper.rb
 #
-# Common data for testing. 
+# Common data and helper functions for testing.
+
+require "rspec/longrun"
+
 require "./lib/nmatrix"
 require "./lib/nmatrix/rspec"
 
@@ -36,7 +39,7 @@ RATIONAL_MATRIX43A_ARRAY = MATRIX43A_ARRAY.collect { |x| x.to_r }
 RATIONAL_MATRIX32A_ARRAY = MATRIX32A_ARRAY.collect { |x| x.to_r }
 
 def create_matrix(stype) #:nodoc:
-  m = stype == :yale ? NMatrix.new(stype, 3, :int32) : NMatrix.new(stype, [3,3], 0, :int32)
+  m = NMatrix.new([3,3], 0, dtype: :int32, stype: stype, default: 0)
 
   m[0,0] = 0
   m[0,1] = 1
@@ -47,6 +50,43 @@ def create_matrix(stype) #:nodoc:
   m[2,0] = 6
   m[2,1] = 7
   m[2,2] = 8
+
+  m
+end
+
+def create_rectangular_matrix(stype) #:nodoc:
+  m = NMatrix.new([5,6], 0, dtype: :int32, stype: stype, default: 0)
+
+  m[0,0] = 1
+  m[0,1] = 2
+  m[0,2] = 3
+  m[0,3] = 4
+  m[0,4] = 5
+  m[0,5] = 0
+
+  m[1,0] = 6
+  m[1,1] = 7
+  m[1,2] = 8
+  m[1,3] = 9
+  m[1,4] = 0
+  m[1,5] = 10
+
+  m[2,0] = 11
+  m[2,1] = 12
+  m[2,2] = 13
+  m[2,3] = 0
+  m[2,4] = 14
+  m[2,5] = 15
+
+  # skip row 3 -- all 0
+  m[3,0] = m[3,1] = m[3,2] = m[3,3] = m[3,4] = m[3,5] = 0
+
+  m[4,0] = 16
+  m[4,1] = 0
+  m[4,2] = 17
+  m[4,3] = 18
+  m[4,4] = 19
+  m[4,5] = 20
 
   m
 end
