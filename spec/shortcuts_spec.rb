@@ -66,6 +66,15 @@ describe NMatrix do
     m[2,2].should eq(arr[2])
     m[3,3].should eq(arr[3])
   end
+  it "diagonals() allows you to set the dtype per the documentation" do 
+    arr = [1,2,3,4]
+    m = NMatrix.diagonals(arr, dtype: :float32)
+    m.dtype.should eq(:float32)
+    m[0,0].should eq(arr[0])
+    m[1,1].should eq(arr[1])
+    m[2,2].should eq(arr[2])
+    m[3,3].should eq(arr[3])
+  end
 
   it "random() creates a matrix of random numbers" do
     m = NMatrix.random(2)
